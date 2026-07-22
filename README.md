@@ -64,6 +64,25 @@ pnpm test
 
 Run `pnpm run watch` while developing to continuously compile the extension.
 
+## Publishing to the VS Code Marketplace
+
+The extension is configured for the `mchu1966` Marketplace publisher. Before the first release:
+
+1. Create or sign in to the publisher account at [Visual Studio Marketplace](https://marketplace.visualstudio.com/manage).
+2. Create an Azure DevOps personal access token with the **Marketplace > Manage** scope.
+3. Add that token to the GitHub repository as the `VSCE_PAT` Actions secret.
+
+Create a tagged release to publish:
+
+```sh
+pnpm run lint
+pnpm run package
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The tag triggers the publish workflow. The tag version must match the `version` in `package.json`. For a local publish, set `VSCE_PAT` in your shell and run `pnpm run publish`.
+
 ## Known Limitations
 
 - Headline and article extraction depends on the current RTHK page structure. A site redesign can require scraper updates.

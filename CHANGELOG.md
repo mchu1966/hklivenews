@@ -4,6 +4,6 @@ All notable changes to the "hklivenews" extension will be documented in this fil
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [1.0.0] - 2026-07-22
 
-- Initial release
+- First Marketplace-ready release of HK Live News.

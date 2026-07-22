@@ -1,9 +1,24 @@
 {
   "name": "hklivenews",
-  "displayName": "hklivenews",
+  "displayName": "HK Live News",
   "description": "Read latest HK news from RTHK",
   "publisher": "mchu1966",
   "version": "1.0.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mchu1966/hklivenews.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mchu1966/hklivenews/issues"
+  },
+  "homepage": "https://github.com/mchu1966/hklivenews#readme",
+  "keywords": [
+    "hong-kong",
+    "news",
+    "rthk",
+    "status-bar"
+  ],
   "engines": {
     "vscode": "^1.125.0"
   },
@@ -54,7 +69,9 @@
     "watch": "tsc -watch -p ./",
     "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "vsce package",
+    "publish": "vsce publish"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -62,6 +79,7 @@
     "@types/vscode": "^1.125.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^3.9.2",
     "eslint": "^10.5.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1"
