@@ -3,7 +3,7 @@
   "displayName": "HK Live News",
   "description": "Read latest HK news from RTHK",
   "publisher": "mchu1966",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -50,6 +50,10 @@
       {
         "command": "hklivenews.prev",
         "title": "HK Live News: Show Previous HK News Headline"
+      },
+      {
+        "command": "hklivenews.selectHeadline",
+        "title": "HK Live News: Select HK News Headline"
       }
     ],
     "keybindings": [
@@ -61,7 +65,32 @@
         "command": "hklivenews.prev",
         "key": "alt+a"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "HK Live News",
+      "properties": {
+        "hklivenews.sources": {
+          "type": "array",
+          "default": [
+            "rthk"
+          ],
+          "uniqueItems": true,
+          "scope": "window",
+          "description": "News sources to combine when refreshing headlines.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "rthk",
+              "now"
+            ],
+            "enumDescriptions": [
+              "RTHK Chinese latest news",
+              "Now News local news"
+            ]
+          }
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run compile",
@@ -74,6 +103,7 @@
     "publish": "vsce publish"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "24.x",
     "@types/vscode": "^1.125.0",

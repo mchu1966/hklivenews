@@ -6,7 +6,10 @@ import * as vscode from "vscode";
 import {
   formatHeadline,
   formatNewsPosition,
+  getHeadlineQuickPickItems,
   getNextNewsIndex,
+  getSelectedNewsSources,
+  toNowArticleUrl,
   toRthkArticleUrl,
   truncateHeadline,
 } from "../extension";
@@ -31,6 +34,15 @@ suite("Extension Test Suite", () => {
     assert.strictEqual(toRthkArticleUrl("https://example.com/article.htm"), undefined);
   });
 
+  test("accepts only Now News local article links", () => {
+    assert.strictEqual(
+      toNowArticleUrl("/home/local/player?newsId=655631"),
+      "https://news.now.com/home/local/player?newsId=655631",
+    );
+    assert.strictEqual(toNowArticleUrl("https://news.now.com/home/local/player?newsId=abc"), undefined);
+    assert.strictEqual(toNowArticleUrl("https://example.com/home/local/player?newsId=655631"), undefined);
+  });
+
   test("formats the one-based current news position", () => {
     assert.strictEqual(formatNewsPosition(0, 12), "1/12");
     assert.strictEqual(formatNewsPosition(11, 12), "12/12");
@@ -46,8 +58,27 @@ suite("Extension Test Suite", () => {
     assert.strictEqual(formatHeadline("香港今日最新新聞標題", 8), "香港今日最...");
   });
 
+  test("builds headline choices with their source and original position", () => {
+    assert.deepStrictEqual(
+      getHeadlineQuickPickItems([
+        { title: "第一則新聞", source: "rthk" },
+        { title: "第二則新聞", source: "now" },
+      ]),
+      [
+        { label: "第一則新聞", description: "RTHK", articleIndex: 0 },
+        { label: "第二則新聞", description: "Now News", articleIndex: 1 },
+      ],
+    );
+  });
+
   test("wraps automatic headline rotation to the first article", () => {
     assert.strictEqual(getNextNewsIndex(0, 3), 1);
     assert.strictEqual(getNextNewsIndex(2, 3), 0);
+  });
+
+  test("selects each valid configured source once and defaults to RTHK", () => {
+    assert.deepStrictEqual(getSelectedNewsSources(["now", "rthk", "now", "unknown"]), ["now", "rthk"]);
+    assert.deepStrictEqual(getSelectedNewsSources([]), ["rthk"]);
+    assert.deepStrictEqual(getSelectedNewsSources("rthk"), ["rthk"]);
   });
 });

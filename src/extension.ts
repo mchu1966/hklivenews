@@ -9,16 +9,34 @@ const AUTO_NEXT_INTERVAL_MS = 60 * 1000;
 const MAX_ARTICLES = 50;
 const MAX_ARTICLE_CONTENT_LENGTH = 6_000;
 const MAX_HEADLINE_LENGTH = 32;
+const NEWS_SOURCES = ["rthk", "now"] as const;
+
+type NewsSource = (typeof NEWS_SOURCES)[number];
 
 interface NewsArticle {
   readonly title: string;
   readonly url: string;
+  readonly source: NewsSource;
   readonly content?: string;
+}
+
+export interface HeadlineQuickPickItem {
+  readonly label: string;
+  readonly description: string;
+  readonly articleIndex: number;
 }
 
 interface NewsLink {
   readonly title: string;
   readonly href: string;
+}
+
+interface NewsSourceDefinition {
+  readonly label: string;
+  readonly latestNewsUrl: string;
+  readonly articleLinkSelector: string;
+  readonly contentSelector: string;
+  readonly toArticleUrl: (value: string) => string | undefined;
 }
 
 interface PuppeteerPage {
@@ -28,7 +46,7 @@ interface PuppeteerPage {
   ): Promise<unknown>;
   waitForSelector(selector: string, options: { readonly timeout: number }): Promise<unknown>;
   $$eval<T>(selector: string, pageFunction: (elements: Element[]) => T): Promise<T>;
-  evaluate<T>(pageFunction: () => T): Promise<T>;
+  evaluate<T, Argument>(pageFunction: (argument: Argument) => T, argument: Argument): Promise<T>;
 }
 
 interface PuppeteerBrowser {
@@ -55,6 +73,50 @@ export function toRthkArticleUrl(value: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function toNowArticleUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value, "https://news.now.com/");
+    const newsId = url.searchParams.get("newsId");
+    const isArticle = /^\/home\/local\/player$/.test(url.pathname) && /^\d+$/.test(newsId ?? "");
+
+    return url.protocol === "https:" && url.hostname === "news.now.com" && isArticle
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const NEWS_SOURCE_DEFINITIONS: Readonly<Record<NewsSource, NewsSourceDefinition>> = {
+  rthk: {
+    label: "RTHK",
+    latestNewsUrl: LATEST_NEWS_URL,
+    articleLinkSelector: 'a[href*="/rthk/ch/component/k2/"]',
+    contentSelector: ".itemFullText, .itemIntroText, article, main",
+    toArticleUrl: toRthkArticleUrl,
+  },
+  now: {
+    label: "Now News",
+    latestNewsUrl: "https://news.now.com/home/local",
+    articleLinkSelector: 'a[href*="/home/local/player?newsId="]',
+    contentSelector: "article, main",
+    toArticleUrl: toNowArticleUrl,
+  },
+};
+
+export function getSelectedNewsSources(value: unknown): readonly NewsSource[] {
+  if (!Array.isArray(value)) {
+    return ["rthk"];
+  }
+
+  const selectedSources = value.filter(
+    (source): source is NewsSource =>
+      typeof source === "string" && NEWS_SOURCES.includes(source as NewsSource),
+  );
+
+  return selectedSources.length > 0 ? [...new Set(selectedSources)] : ["rthk"];
 }
 
 export function formatNewsPosition(currentIndex: number, totalNews: number): string {
@@ -86,6 +148,16 @@ export function formatHeadline(headline: string, maxLength: number): string {
   return `${displayHeadline}${"\u00a0".repeat(paddingLength)}`;
 }
 
+export function getHeadlineQuickPickItems(
+  articles: readonly Pick<NewsArticle, "title" | "source">[],
+): readonly HeadlineQuickPickItem[] {
+  return articles.map((article, articleIndex) => ({
+    label: article.title,
+    description: NEWS_SOURCE_DEFINITIONS[article.source].label,
+    articleIndex,
+  }));
+}
+
 function cleanText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -98,39 +170,48 @@ function getErrorMessage(error: unknown): string {
   return "Unexpected error";
 }
 
-function toNewsArticles(links: readonly NewsLink[]): readonly NewsArticle[] {
+function toNewsArticles(
+  links: readonly NewsLink[],
+  source: NewsSource,
+  toArticleUrl: (value: string) => string | undefined,
+): readonly NewsArticle[] {
   const articles: NewsArticle[] = [];
 
   for (const link of links) {
-    const url = toRthkArticleUrl(link.href);
+    const url = toArticleUrl(link.href);
     const title = cleanText(link.title);
 
     if (url && title && !articles.some((article) => article.url === url)) {
-      articles.push({ title, url });
+      articles.push({ title, url, source });
     }
   }
 
   return articles.slice(0, MAX_ARTICLES);
 }
 
-class RthkNewsScraper {
+class NewsScraper {
+  public constructor(
+    private readonly source: NewsSource,
+    private readonly definition: NewsSourceDefinition,
+  ) {}
+
   public async fetchLatestArticles(): Promise<readonly NewsArticle[]> {
     const puppeteer = await loadPuppeteer();
     const browser = await puppeteer.launch({ headless: true });
 
     try {
       const page = await browser.newPage();
-      await page.goto(LATEST_NEWS_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      await page.waitForSelector('a[href*="/rthk/ch/component/k2/"]', { timeout: 15_000 });
+      await page.goto(this.definition.latestNewsUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await page.waitForSelector(this.definition.articleLinkSelector, { timeout: 15_000 });
 
-      const links = await page.$$eval('a[href*="/rthk/ch/component/k2/"]', (anchors) =>
+      const links = await page.$$eval(this.definition.articleLinkSelector, (anchors) =>
         anchors.map((anchor) => ({
           title: anchor.textContent ?? "",
           href: (anchor as HTMLAnchorElement).href,
         })),
       );
 
-      return toNewsArticles(links);
+      return toNewsArticles(links, this.source, this.definition.toArticleUrl);
     } finally {
       await browser.close();
     }
@@ -144,10 +225,10 @@ class RthkNewsScraper {
       const page = await browser.newPage();
       await page.goto(articleUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
-      const content = await page.evaluate(() => {
-        const article = document.querySelector(".itemFullText, .itemIntroText, article, main");
-        return article?.textContent ?? "";
-      });
+      const content = await page.evaluate(
+        (contentSelector) => document.querySelector(contentSelector)?.textContent ?? "",
+        this.definition.contentSelector,
+      );
 
       return cleanText(content).slice(0, MAX_ARTICLE_CONTENT_LENGTH);
     } finally {
@@ -156,15 +237,47 @@ class RthkNewsScraper {
   }
 }
 
+class MultiSourceNewsScraper {
+  public async fetchLatestArticles(sources: readonly NewsSource[]): Promise<readonly NewsArticle[]> {
+    const results = await Promise.allSettled(
+      sources.map((source) => new NewsScraper(source, NEWS_SOURCE_DEFINITIONS[source]).fetchLatestArticles()),
+    );
+    const articles = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+
+    if (articles.length === 0) {
+      const failure = results.find((result) => result.status === "rejected");
+      throw new Error(
+        failure?.status === "rejected" ? getErrorMessage(failure.reason) : "No articles found.",
+      );
+    }
+
+    return articles
+      .filter(
+        (article, index, allArticles) => allArticles.findIndex((item) => item.url === article.url) === index,
+      )
+      .slice(0, MAX_ARTICLES);
+  }
+
+  public async fetchArticleContent(article: NewsArticle): Promise<string> {
+    return new NewsScraper(article.source, NEWS_SOURCE_DEFINITIONS[article.source]).fetchArticleContent(
+      article.url,
+    );
+  }
+}
+
 class HkLiveNewsController implements vscode.Disposable {
-  private readonly scraper = new RthkNewsScraper();
-  private readonly headlineStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
+  private readonly scraper = new MultiSourceNewsScraper();
+  private readonly headlineStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 96);
   private readonly previousStatusItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     100,
   );
   private readonly positionStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
-  private readonly nextStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
+  private readonly selectHeadlineStatusItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    98,
+  );
+  private readonly nextStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
   private articles: readonly NewsArticle[] = [];
   private currentIndex = 0;
   private refreshTimer: NodeJS.Timeout | undefined;
@@ -184,6 +297,9 @@ class HkLiveNewsController implements vscode.Disposable {
     this.nextStatusItem.command = "hklivenews.next";
     this.nextStatusItem.text = "$(chevron-right)";
     this.nextStatusItem.tooltip = "Next HK News headline";
+    this.selectHeadlineStatusItem.command = "hklivenews.selectHeadline";
+    this.selectHeadlineStatusItem.text = "$(menu)";
+    this.selectHeadlineStatusItem.tooltip = "Select an HK News headline";
     this.headlineStatusItem.show();
   }
 
@@ -222,14 +338,16 @@ class HkLiveNewsController implements vscode.Disposable {
     this.showRefreshingState();
 
     try {
-      const articles = await this.scraper.fetchLatestArticles();
+      const articles = await this.scraper.fetchLatestArticles(
+        getSelectedNewsSources(vscode.workspace.getConfiguration("hklivenews").get<unknown>("sources")),
+      );
 
       if (this.isStopped) {
         return;
       }
 
       if (articles.length === 0) {
-        throw new Error("RTHK did not return any current article links.");
+        throw new Error("The selected sources did not return any current article links.");
       }
 
       const currentUrl = this.articles[this.currentIndex]?.url;
@@ -257,6 +375,24 @@ class HkLiveNewsController implements vscode.Disposable {
     await this.move(-1);
   }
 
+  public async selectHeadline(): Promise<void> {
+    if (this.articles.length === 0) {
+      void vscode.window.showInformationMessage("No HK News headlines have been loaded yet.");
+      return;
+    }
+
+    const selectedHeadline = await vscode.window.showQuickPick(getHeadlineQuickPickItems(this.articles), {
+      placeHolder: "Select an HK News headline",
+    });
+
+    if (!selectedHeadline) {
+      return;
+    }
+
+    this.currentIndex = selectedHeadline.articleIndex;
+    await this.showCurrentArticle();
+  }
+
   public openCurrentArticle(): void {
     const article = this.articles[this.currentIndex];
 
@@ -278,6 +414,7 @@ class HkLiveNewsController implements vscode.Disposable {
     this.previousStatusItem.dispose();
     this.positionStatusItem.dispose();
     this.nextStatusItem.dispose();
+    this.selectHeadlineStatusItem.dispose();
   }
 
   private async move(offset: number): Promise<void> {
@@ -302,7 +439,7 @@ class HkLiveNewsController implements vscode.Disposable {
     this.isLoadingArticle = true;
 
     try {
-      const content = article.content ?? (await this.scraper.fetchArticleContent(article.url));
+      const content = article.content ?? (await this.scraper.fetchArticleContent(article));
       const updatedArticle = { ...article, content };
       this.articles = this.articles.map((item) => (item.url === article.url ? updatedArticle : item));
 
@@ -311,7 +448,7 @@ class HkLiveNewsController implements vscode.Disposable {
       }
     } catch {
       if (!this.isStopped && this.isCurrentArticle(article.url)) {
-        this.updateStatusBar(article, "Unable to load article details. Click to open the RTHK page.");
+        this.updateStatusBar(article, "Unable to load article details. Click to open the source page.");
       }
     } finally {
       this.isLoadingArticle = false;
@@ -329,7 +466,7 @@ class HkLiveNewsController implements vscode.Disposable {
 
   private updateStatusBar(article: NewsArticle, detail: string): void {
     this.headlineStatusItem.text = `$(newspaper) ${formatHeadline(article.title, MAX_HEADLINE_LENGTH)}`;
-    this.headlineStatusItem.tooltip = `${article.title}\n\n${detail}\n\nClick to open the RTHK article.`;
+    this.headlineStatusItem.tooltip = `${article.title}\n\n${detail}\n\nSource: ${NEWS_SOURCE_DEFINITIONS[article.source].label}\nClick to open the article.`;
     this.positionStatusItem.text = formatNewsPosition(this.currentIndex, this.articles.length);
     this.showNavigationItems();
   }
@@ -355,12 +492,14 @@ class HkLiveNewsController implements vscode.Disposable {
     this.previousStatusItem.show();
     this.positionStatusItem.show();
     this.nextStatusItem.show();
+    this.selectHeadlineStatusItem.show();
   }
 
   private hideNavigationItems(): void {
     this.previousStatusItem.hide();
     this.positionStatusItem.hide();
     this.nextStatusItem.hide();
+    this.selectHeadlineStatusItem.hide();
   }
 
   private clearAutoNextTimer(): void {
@@ -399,6 +538,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("hklivenews.stop", () => controller?.stop()),
     vscode.commands.registerCommand("hklivenews.next", () => controller?.next()),
     vscode.commands.registerCommand("hklivenews.prev", () => controller?.previous()),
+    vscode.commands.registerCommand("hklivenews.selectHeadline", () => controller?.selectHeadline()),
     vscode.commands.registerCommand("hklivenews.openCurrent", () => controller?.openCurrentArticle()),
   );
 
