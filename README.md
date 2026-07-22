@@ -67,15 +67,17 @@ Run `pnpm run watch` while developing to continuously compile the extension.
 ## Known Limitations
 
 - Headline and article extraction depends on the current RTHK page structure. A site redesign can require scraper updates.
-- The extension displays up to 20 headlines per refresh.
-- No extension settings are currently provided; the refresh interval is fixed at five minutes.
+- The extension displays up to 50 headlines per refresh.
+- No extension settings are currently provided; refreshing is fixed at five minutes and automatic headline rotation at one minute.
 - VS Code does not provide extensions with status-bar hover events, so automatic rotation cannot pause specifically while the headline tooltip is open. Use **Stop Refreshing HK News** to pause it.
 
 ## Release Notes
 
-### 0.0.1
+### 1.0.0
 
-- Initial release with RTHK scraping, five-minute refreshing, status-bar navigation, and article links.
+- First stable release of HK Live News.
+- Brings current Chinese-language RTHK headlines to the VS Code status bar.
+- Includes automatic five-minute refreshes, one-minute headline rotation, status-bar navigation, and article links.
 
 ## License
 
