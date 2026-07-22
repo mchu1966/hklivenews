@@ -1,0 +1,76 @@
+{
+  "name": "hklivenews",
+  "displayName": "hklivenews",
+  "description": "Read latest HK news from RTHK",
+  "publisher": "mchu1966",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "hklivenews.start",
+        "title": "HK Live News: Start Refreshing HK News (default 5 mins)"
+      },
+      {
+        "command": "hklivenews.refresh",
+        "title": "HK Live News: Manually refresh HK News"
+      },
+      {
+        "command": "hklivenews.stop",
+        "title": "HK Live News: Stop Refreshing HK News"
+      },
+      {
+        "command": "hklivenews.next",
+        "title": "HK Live News: Show Next HK News Headline"
+      },
+      {
+        "command": "hklivenews.prev",
+        "title": "HK Live News: Show Previous HK News Headline"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "hklivenews.next",
+        "key": "alt+d"
+      },
+      {
+        "command": "hklivenews.prev",
+        "key": "alt+a"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "pnpm run compile && pnpm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "@types/vscode": "^1.125.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
+    "eslint": "^10.5.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  },
+  "dependencies": {
+    "puppeteer": "^25.3.0"
+  }
+}
