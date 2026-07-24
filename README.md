@@ -1,20 +1,24 @@
 # HK Live News
 
+<p align="center">
+ <img src="resources/hklivenews-icon.png" alt="HK Live News icon" width="128">
+</p>
+
 HK Live News brings the latest Chinese-language Hong Kong headlines into the VS Code status bar. It fetches your selected sources directly and opens the selected article in your browser.
 
 ## Features
 
-- Combines the 50 most recently published headlines from RTHK and Now News.
+- Combines headlines from the selected sources, keeping the 50 most recently published items.
 - Starts automatically when VS Code finishes starting, then refreshes every five minutes.
 - Advances to the next loaded headline every minute.
 - Shows the active headline, its position, and previous/next controls in the status bar.
-- Uses a fixed-width headline area, truncating long titles with `...`; hover over a headline to read its full title and article text.
+- Uses a fixed-width headline area, truncating long titles with `...`; hover over a headline to read its full title and an article-text excerpt.
 - Opens the selected source article when its headline is clicked.
 
 The status bar uses this layout:
 
 ```text
-<  1/20  >  HK headline...
+<  1/20 ≡ >  HK headline...
 ```
 
 ## Usage
@@ -77,10 +81,17 @@ Run `pnpm run watch` while developing to continuously compile the extension.
 
 - Headline and article extraction depends on the current source page structures. A site redesign can require scraper updates.
 - The extension displays up to 50 headlines per refresh.
+- Article-text excerpts in status-bar tooltips are limited to 6,000 characters.
 - `hklivenews.sources` controls the sources to combine; refreshing remains fixed at five minutes and automatic headline rotation at one minute.
 - VS Code does not provide extensions with status-bar hover events, so automatic rotation cannot pause specifically while the headline tooltip is open. Use **Stop Refreshing HK News** to pause it.
 
 ## Release Notes
+
+### 1.0.1
+
+- Added optional Now News local headlines alongside RTHK.
+- Added source selection through `hklivenews.sources` and the **Configure News Sources** command.
+- Added publication time to the status-bar tooltip for each headline.
 
 ### 1.0.0
 
