@@ -28,6 +28,13 @@ export interface HeadlineQuickPickItem {
   readonly articleIndex: number;
 }
 
+export interface SourceQuickPickItem {
+  readonly label: string;
+  readonly description: string;
+  readonly source: NewsSource;
+  readonly picked: boolean;
+}
+
 interface NewsLink {
   readonly title: string;
   readonly href: string;
@@ -35,6 +42,7 @@ interface NewsLink {
 
 interface NewsSourceDefinition {
   readonly label: string;
+  readonly description: string;
   readonly latestNewsUrl: string;
   readonly articleLinkSelector: string;
   readonly contentSelector: string;
@@ -71,6 +79,7 @@ export function toNowArticleUrl(value: string): string | undefined {
 const NEWS_SOURCE_DEFINITIONS: Readonly<Record<NewsSource, NewsSourceDefinition>> = {
   rthk: {
     label: "RTHK",
+    description: "RTHK Chinese latest news",
     latestNewsUrl: LATEST_NEWS_URL,
     articleLinkSelector: 'a[href*="/rthk/ch/component/k2/"]',
     contentSelector: ".itemFullText, .itemIntroText, article, main",
@@ -78,6 +87,7 @@ const NEWS_SOURCE_DEFINITIONS: Readonly<Record<NewsSource, NewsSourceDefinition>
   },
   now: {
     label: "Now News",
+    description: "Now News local news",
     latestNewsUrl: "https://news.now.com/home/local",
     articleLinkSelector: 'a[href*="/home/local/player?newsId="]',
     contentSelector: "article, main",
@@ -96,6 +106,23 @@ export function getSelectedNewsSources(value: unknown): readonly NewsSource[] {
   );
 
   return selectedSources.length > 0 ? [...new Set(selectedSources)] : ["rthk"];
+}
+
+export function getSourceQuickPickItems(
+  selectedSources: readonly NewsSource[],
+): readonly SourceQuickPickItem[] {
+  return NEWS_SOURCES.map((source) => ({
+    label: NEWS_SOURCE_DEFINITIONS[source].label,
+    description: NEWS_SOURCE_DEFINITIONS[source].description,
+    source,
+    picked: selectedSources.includes(source),
+  }));
+}
+
+export function getNewsSourcesConfigurationTarget(workspaceValue: unknown): vscode.ConfigurationTarget {
+  return workspaceValue === undefined
+    ? vscode.ConfigurationTarget.Global
+    : vscode.ConfigurationTarget.Workspace;
 }
 
 export function formatNewsPosition(currentIndex: number, totalNews: number): string {
@@ -263,6 +290,7 @@ class HkLiveNewsController implements vscode.Disposable {
   private refreshTimer: NodeJS.Timeout | undefined;
   private autoNextTimer: NodeJS.Timeout | undefined;
   private isRefreshing = false;
+  private isRefreshQueued = false;
   private isLoadingArticle = false;
   private isStopped = false;
 
@@ -344,6 +372,13 @@ class HkLiveNewsController implements vscode.Disposable {
       }
     } finally {
       this.isRefreshing = false;
+
+      if (this.isRefreshQueued && this.refreshTimer) {
+        this.isRefreshQueued = false;
+        await this.refresh(true);
+      } else {
+        this.isRefreshQueued = false;
+      }
     }
   }
 
@@ -371,6 +406,35 @@ class HkLiveNewsController implements vscode.Disposable {
 
     this.currentIndex = selectedHeadline.articleIndex;
     await this.showCurrentArticle();
+  }
+
+  public async configureSources(): Promise<void> {
+    const configuration = vscode.workspace.getConfiguration("hklivenews");
+    const selectedSources = getSelectedNewsSources(configuration.get<unknown>("sources"));
+    const selectedItems = await vscode.window.showQuickPick(getSourceQuickPickItems(selectedSources), {
+      canPickMany: true,
+      placeHolder: "Select one or more HK News sources",
+      title: "HK News Sources",
+    });
+
+    if (!selectedItems) {
+      return;
+    }
+
+    if (selectedItems.length === 0) {
+      void vscode.window.showInformationMessage("Select at least one HK News source.");
+      return;
+    }
+
+    await configuration.update(
+      "sources",
+      selectedItems.map((item) => item.source),
+      getNewsSourcesConfigurationTarget(configuration.inspect("sources")?.workspaceValue),
+    );
+
+    if (this.refreshTimer) {
+      await this.refreshForSourceChange();
+    }
   }
 
   public openCurrentArticle(): void {
@@ -405,6 +469,15 @@ class HkLiveNewsController implements vscode.Disposable {
 
     this.currentIndex = (this.currentIndex + offset + this.articles.length) % this.articles.length;
     await this.showCurrentArticle();
+  }
+
+  private async refreshForSourceChange(): Promise<void> {
+    if (this.isRefreshing) {
+      this.isRefreshQueued = true;
+      return;
+    }
+
+    await this.refresh(true);
   }
 
   private async showCurrentArticle(): Promise<void> {
@@ -519,6 +592,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("hklivenews.next", () => controller?.next()),
     vscode.commands.registerCommand("hklivenews.prev", () => controller?.previous()),
     vscode.commands.registerCommand("hklivenews.selectHeadline", () => controller?.selectHeadline()),
+    vscode.commands.registerCommand("hklivenews.configureSources", () => controller?.configureSources()),
     vscode.commands.registerCommand("hklivenews.openCurrent", () => controller?.openCurrentArticle()),
   );
 

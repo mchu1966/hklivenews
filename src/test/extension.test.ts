@@ -8,8 +8,10 @@ import {
   formatHeadline,
   formatNewsPosition,
   getHeadlineQuickPickItems,
+  getNewsSourcesConfigurationTarget,
   getNextNewsIndex,
   getSelectedNewsSources,
+  getSourceQuickPickItems,
   parseNewsArticlesFromHtml,
   toNowArticleUrl,
   toRthkArticleUrl,
@@ -127,5 +129,17 @@ suite("Extension Test Suite", () => {
     assert.deepStrictEqual(getSelectedNewsSources(["now", "rthk", "now", "unknown"]), ["now", "rthk"]);
     assert.deepStrictEqual(getSelectedNewsSources([]), ["rthk"]);
     assert.deepStrictEqual(getSelectedNewsSources("rthk"), ["rthk"]);
+  });
+
+  test("builds checkbox items for every available news source", () => {
+    assert.deepStrictEqual(getSourceQuickPickItems(["now"]), [
+      { label: "RTHK", description: "RTHK Chinese latest news", source: "rthk", picked: false },
+      { label: "Now News", description: "Now News local news", source: "now", picked: true },
+    ]);
+  });
+
+  test("updates the active configuration scope for news sources", () => {
+    assert.strictEqual(getNewsSourcesConfigurationTarget(undefined), vscode.ConfigurationTarget.Global);
+    assert.strictEqual(getNewsSourcesConfigurationTarget(["rthk"]), vscode.ConfigurationTarget.Workspace);
   });
 });

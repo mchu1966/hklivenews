@@ -23,7 +23,8 @@ The status bar uses this layout:
 2. Use the status-bar arrows or keyboard shortcuts to move through the current headlines.
 3. Click the list button beside the headline position to select a headline from the full list.
 4. Click a headline to open its source article.
-5. Run **Start Refreshing HK News (default 5 mins)** from the Command Palette to restart scheduled refreshing after it has been stopped.
+5. Run **Configure News Sources** from the Command Palette to select one or more sources with checkboxes.
+6. Run **Start Refreshing HK News (default 5 mins)** from the Command Palette to restart scheduled refreshing after it has been stopped.
 
 ## Settings
 
@@ -47,6 +48,7 @@ Available values are `rthk` (RTHK Chinese latest news) and `now` (Now News local
 | `HK Live News: Show Next HK News Headline` | Selects the next headline. |
 | `HK Live News: Show Previous HK News Headline` | Selects the previous headline. |
 | `HK Live News: Select HK News Headline` | Opens the headline picker. |
+| `HK Live News: Configure News Sources` | Opens a checkbox list to select the sources to combine. |
 
 ## Keyboard Shortcuts
 

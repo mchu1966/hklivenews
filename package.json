@@ -54,6 +54,10 @@
       {
         "command": "hklivenews.selectHeadline",
         "title": "HK Live News: Select HK News Headline"
+      },
+      {
+        "command": "hklivenews.configureSources",
+        "title": "HK Live News: Configure News Sources"
       }
     ],
     "keybindings": [
