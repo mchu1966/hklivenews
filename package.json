@@ -4,6 +4,7 @@
   "description": "Read latest HK news from RTHK",
   "publisher": "mchu1966",
   "version": "1.0.1",
+  "icon": "resources/hklivenews-icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
