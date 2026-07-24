@@ -16,6 +16,7 @@ const MAX_HEADLINE_LENGTH = 32;
 const FETCH_TIMEOUT_MS = 30_000;
 const HONG_KONG_UTC_OFFSET_MS = 8 * 60 * 60 * 1_000;
 const NEWS_SOURCES = ["rthk", "now"] as const;
+const DIRECT_VIDEO_FILE_EXTENSIONS = /\.(mp4|webm|ogv|ogg)$/i;
 
 type NewsSource = (typeof NEWS_SOURCES)[number];
 
@@ -24,7 +25,30 @@ export interface NewsArticle {
   readonly url: string;
   readonly source: NewsSource;
   readonly publishedAt: number;
-  readonly content?: string;
+  readonly content?: NewsArticleContent;
+}
+
+interface TextArticleBlock {
+  readonly type: "text";
+  readonly text: string;
+}
+
+interface ImageArticleBlock {
+  readonly type: "image";
+  readonly url: string;
+  readonly alt: string;
+}
+
+interface VideoArticleBlock {
+  readonly type: "video";
+  readonly url: string;
+  readonly mimeType: string | undefined;
+}
+
+type NewsArticleBlock = TextArticleBlock | ImageArticleBlock | VideoArticleBlock;
+
+export interface NewsArticleContent {
+  readonly blocks: readonly NewsArticleBlock[];
 }
 
 export interface HeadlineQuickPickItem {
@@ -292,11 +316,101 @@ export function mergeNewsArticlesByPublicationDate(articles: readonly NewsArticl
     .slice(0, MAX_ARTICLES);
 }
 
-export function extractArticleContentFromHtml(html: string, source: NewsSource): string {
-  const $ = load(html);
-  const content = $(NEWS_SOURCE_DEFINITIONS[source].contentSelector).first().text();
+function toSafeMediaUrl(value: string | undefined, baseUrl: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
 
-  return cleanText(content).slice(0, MAX_ARTICLE_CONTENT_LENGTH);
+  try {
+    const url = new URL(value, baseUrl);
+
+    return url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isDirectVideoUrl(url: string, mimeType: string | undefined): boolean {
+  return (
+    DIRECT_VIDEO_FILE_EXTENSIONS.test(new URL(url).pathname) ||
+    /^video\/(mp4|webm|ogg)$/i.test(mimeType ?? "")
+  );
+}
+
+function getTextArticleBlock(text: string): TextArticleBlock | undefined {
+  const normalizedText = cleanText(text).slice(0, MAX_ARTICLE_CONTENT_LENGTH);
+
+  return normalizedText ? { type: "text", text: normalizedText } : undefined;
+}
+
+function createTextArticleContent(text: string): NewsArticleContent {
+  return { blocks: [{ type: "text", text }] };
+}
+
+function getArticleContentSummary(content: NewsArticleContent): string {
+  return content.blocks
+    .filter((block): block is TextArticleBlock => block.type === "text")
+    .map((block) => block.text)
+    .join(" ");
+}
+
+export function extractArticleContentFromHtml(
+  html: string,
+  source: NewsSource,
+  articleUrl = NEWS_SOURCE_DEFINITIONS[source].latestNewsUrl,
+): NewsArticleContent {
+  const $ = load(html);
+  const articleRoot = $(NEWS_SOURCE_DEFINITIONS[source].contentSelector).first();
+  const blocks: NewsArticleBlock[] = [];
+
+  articleRoot.find("script, style, noscript, iframe, object, embed, template").remove();
+  articleRoot.find("p, h1, h2, h3, h4, li, img, video").each((_, element) => {
+    const node = $(element);
+    const tagName = element.tagName.toLowerCase();
+
+    if (tagName === "img") {
+      const url = toSafeMediaUrl(node.attr("src") ?? node.attr("data-src"), articleUrl);
+
+      if (url) {
+        blocks.push({ type: "image", url, alt: cleanText(node.attr("alt") ?? "") });
+      }
+      return;
+    }
+
+    if (tagName === "video") {
+      const source = node.attr("src")
+        ? node
+        : node
+            .find("source")
+            .filter((_, sourceElement) => Boolean($(sourceElement).attr("src")))
+            .first();
+      const url = toSafeMediaUrl(source.attr("src"), articleUrl);
+      const mimeType = source.attr("type");
+
+      if (url && isDirectVideoUrl(url, mimeType)) {
+        blocks.push({ type: "video", url, mimeType });
+      }
+      return;
+    }
+
+    if (node.parents("p, h1, h2, h3, h4, li").length === 0) {
+      const block = getTextArticleBlock(node.text());
+
+      if (block) {
+        blocks.push(block);
+      }
+    }
+  });
+
+  if (blocks.length === 0) {
+    const block = getTextArticleBlock(articleRoot.text());
+
+    if (block) {
+      blocks.push(block);
+    }
+  }
+
+  return { blocks };
 }
 
 function escapeHtml(value: string): string {
@@ -313,28 +427,60 @@ function escapeHtml(value: string): string {
   });
 }
 
-export function renderArticleWebview(article: NewsArticle, content: string): string {
+function getImageOrigins(content: NewsArticleContent): string {
+  return [
+    ...new Set(
+      content.blocks
+        .filter((block): block is ImageArticleBlock => block.type === "image")
+        .map((block) => new URL(block.url).origin),
+    ),
+  ].join(" ");
+}
+
+function renderArticleBlocks(article: NewsArticle, content: NewsArticleContent): string {
+  if (content.blocks.length === 0) {
+    return "<p>No article text was found.</p>";
+  }
+
+  return content.blocks
+    .map((block) => {
+      if (block.type === "text") {
+        return `<p>${escapeHtml(block.text)}</p>`;
+      }
+
+      if (block.type === "image") {
+        return `<img src="${escapeHtml(block.url)}" alt="${escapeHtml(block.alt)}">`;
+      }
+
+      return `<p><a href="${escapeHtml(article.url)}" target="_blank" rel="noreferrer">View original video</a></p>`;
+    })
+    .join("\n");
+}
+
+export function renderArticleWebview(article: NewsArticle, content: NewsArticleContent): string {
   const source = NEWS_SOURCE_DEFINITIONS[article.source].label;
+  const imageOrigins = getImageOrigins(content) || "'none'";
 
   return `<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src ${imageOrigins};">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(article.title)}</title>
   <style>
     body { color: var(--vscode-editor-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.7; margin: 0 auto; max-width: 760px; padding: 32px; }
     h1 { font-size: 1.5em; line-height: 1.35; margin: 0 0 12px; }
     .metadata { color: var(--vscode-descriptionForeground); margin: 0 0 28px; }
-    .content { white-space: pre-wrap; }
+    .content p { white-space: pre-wrap; }
+    .content img { display: block; height: auto; margin: 20px 0; max-width: 100%; }
     a { color: var(--vscode-textLink-foreground); }
   </style>
 </head>
 <body>
   <h1>${escapeHtml(article.title)}</h1>
   <p class="metadata">${escapeHtml(source)} · ${escapeHtml(formatPublishedAt(article.publishedAt))}</p>
-  <div class="content">${escapeHtml(content || "No article text was found.")}</div>
+  <div class="content">${renderArticleBlocks(article, content)}</div>
   <p><a href="${escapeHtml(article.url)}">Open original article</a></p>
 </body>
 </html>`;
@@ -364,10 +510,10 @@ class NewsScraper {
       : parseNewsArticlesFromHtml(latestNews, this.source);
   }
 
-  public async fetchArticleContent(articleUrl: string): Promise<string> {
+  public async fetchArticleContent(articleUrl: string): Promise<NewsArticleContent> {
     const html = await fetchHtml(articleUrl);
 
-    return extractArticleContentFromHtml(html, this.source);
+    return extractArticleContentFromHtml(html, this.source, articleUrl);
   }
 }
 
@@ -388,7 +534,7 @@ class MultiSourceNewsScraper {
     return mergeNewsArticlesByPublicationDate(articles);
   }
 
-  public async fetchArticleContent(article: NewsArticle): Promise<string> {
+  public async fetchArticleContent(article: NewsArticle): Promise<NewsArticleContent> {
     return new NewsScraper(article.source, NEWS_SOURCE_DEFINITIONS[article.source]).fetchArticleContent(
       article.url,
     );
@@ -647,7 +793,10 @@ class HkLiveNewsController implements vscode.Disposable {
       vscode.ViewColumn.Active,
       { enableScripts: false },
     );
-    panel.webview.html = renderArticleWebview(article, "Loading article details...");
+    panel.webview.html = renderArticleWebview(
+      article,
+      createTextArticleContent("Loading article details..."),
+    );
 
     try {
       const content = article.content ?? (await this.scraper.fetchArticleContent(article));
@@ -657,7 +806,7 @@ class HkLiveNewsController implements vscode.Disposable {
     } catch {
       panel.webview.html = renderArticleWebview(
         article,
-        "Unable to load article details. Open the original article to read more.",
+        createTextArticleContent("Unable to load article details. Open the original article to read more."),
       );
     }
   }
@@ -707,7 +856,7 @@ class HkLiveNewsController implements vscode.Disposable {
       if (!this.isStopped && this.isCurrentArticle(article.url)) {
         this.statusBar.showArticle(
           updatedArticle,
-          content || "No article text was found.",
+          getArticleContentSummary(content) || "No article text was found.",
           this.currentIndex,
           this.articles.length,
         );

@@ -139,12 +139,32 @@ suite("Extension Test Suite", () => {
     assert.strictEqual(articles.at(-1)?.title, "News 1");
   });
 
-  test("extracts and normalizes server-rendered article content", () => {
-    assert.strictEqual(
-      extractArticleContentFromHtml("<article> 第一段\n 第二段 </article>", "now"),
-      "第一段 第二段",
+  test("extracts safe text, image, and direct-video blocks from article HTML", () => {
+    assert.deepStrictEqual(
+      extractArticleContentFromHtml(
+        `
+          <article>
+            <p> 第一段\n 文字 </p>
+            <script>window.addEventListener('DOMContentLoaded', () => alert('unsafe'))</script>
+            <img src="/images/news.jpg" alt="新聞圖片" onerror="alert('unsafe')">
+            <img src="javascript:alert('unsafe')" alt="不安全圖片">
+            <video controls src="/media/news.mp4"><source src="/media/fallback.webm" type="video/webm"></video>
+            <video src="https://media.example.com/live.m3u8"></video>
+            <iframe src="https://example.com/player"></iframe>
+          </article>
+        `,
+        "now",
+        "https://news.now.com/home/local/player?newsId=655882",
+      ),
+      {
+        blocks: [
+          { type: "text", text: "第一段 文字" },
+          { type: "image", url: "https://news.now.com/images/news.jpg", alt: "新聞圖片" },
+          { type: "video", url: "https://news.now.com/media/news.mp4", mimeType: undefined },
+        ],
+      },
     );
-    assert.strictEqual(extractArticleContentFromHtml("<main></main>", "rthk"), "");
+    assert.deepStrictEqual(extractArticleContentFromHtml("<main></main>", "rthk"), { blocks: [] });
   });
 
   test("formats the one-based current news position", () => {
@@ -243,7 +263,7 @@ suite("Extension Test Suite", () => {
     provider.dispose();
   });
 
-  test("renders article webview content without interpreting article text as HTML", () => {
+  test("renders safe image previews and links videos to the original article", () => {
     const html = renderArticleWebview(
       {
         title: "<strong>Headline</strong>",
@@ -251,11 +271,26 @@ suite("Extension Test Suite", () => {
         source: "rthk",
         publishedAt: Date.parse("2026-07-22T12:34:00+08:00"),
       },
-      "Article <script>alert('unsafe')</script>",
+      {
+        blocks: [
+          { type: "text", text: "Article <script>alert('unsafe')</script>" },
+          { type: "image", url: "https://media.example.com/article.jpg", alt: "<image>" },
+          { type: "video", url: "https://media.example.com/article.mp4", mimeType: "video/mp4" },
+        ],
+      },
     );
 
     assert.ok(html.includes("&lt;strong&gt;Headline&lt;/strong&gt;"));
     assert.ok(html.includes("Article &lt;script&gt;alert(&#39;unsafe&#39;)&lt;/script&gt;"));
-    assert.ok(html.includes("default-src 'none'"));
+    assert.ok(html.includes('<img src="https://media.example.com/article.jpg" alt="&lt;image&gt;">'));
+    assert.ok(
+      html.includes(
+        'href="https://example.com/article?title=&lt;headline&gt;" target="_blank" rel="noreferrer">View original video</a>',
+      ),
+    );
+    assert.ok(html.includes("img-src https://media.example.com"));
+    assert.ok(!html.includes("<video"));
+    assert.ok(!html.includes("media-src"));
+    assert.ok(!html.includes("window.addEventListener"));
   });
 });
