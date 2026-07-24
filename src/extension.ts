@@ -353,19 +353,85 @@ class MultiSourceNewsScraper {
   }
 }
 
+class NewsStatusBar implements vscode.Disposable {
+  private readonly headlineItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 96);
+  private readonly previousItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  private readonly positionItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+  private readonly selectHeadlineItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
+  private readonly nextItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
+
+  public constructor() {
+    this.headlineItem.command = "hklivenews.openCurrent";
+    this.headlineItem.text = "$(newspaper) HK News";
+    this.headlineItem.tooltip = "Start HK News refreshing to load the latest headlines.";
+    this.previousItem.command = "hklivenews.prev";
+    this.previousItem.text = "$(chevron-left)";
+    this.previousItem.tooltip = "Previous HK News headline";
+    this.positionItem.tooltip = "Current HK News headline";
+    this.nextItem.command = "hklivenews.next";
+    this.nextItem.text = "$(chevron-right)";
+    this.nextItem.tooltip = "Next HK News headline";
+    this.selectHeadlineItem.command = "hklivenews.selectHeadline";
+    this.selectHeadlineItem.text = "$(menu)";
+    this.selectHeadlineItem.tooltip = "Select an HK News headline";
+    this.headlineItem.show();
+  }
+
+  public showArticle(
+    article: NewsArticle,
+    detail: string,
+    currentIndex: number,
+    totalArticles: number,
+  ): void {
+    this.headlineItem.text = `$(newspaper) ${formatHeadline(article.title, MAX_HEADLINE_LENGTH)}`;
+    this.headlineItem.tooltip = `${article.title}\n\n${detail}\n\nPublished: ${formatPublishedAt(article.publishedAt)}\nSource: ${NEWS_SOURCE_DEFINITIONS[article.source].label}\nClick to open the article.`;
+    this.positionItem.text = formatNewsPosition(currentIndex, totalArticles);
+    this.showNavigationItems();
+  }
+
+  public showRefreshing(): void {
+    this.headlineItem.text = "$(sync~spin) Refreshing HK News";
+    this.hideNavigationItems();
+  }
+
+  public showPaused(): void {
+    this.headlineItem.text = "$(newspaper) HK News paused";
+    this.headlineItem.tooltip = "HK News refreshing is paused.";
+    this.hideNavigationItems();
+  }
+
+  public showUnavailable(message: string): void {
+    this.headlineItem.text = "$(warning) HK News unavailable";
+    this.headlineItem.tooltip = `Unable to refresh HK News: ${message}`;
+    this.hideNavigationItems();
+  }
+
+  public dispose(): void {
+    this.headlineItem.dispose();
+    this.previousItem.dispose();
+    this.positionItem.dispose();
+    this.nextItem.dispose();
+    this.selectHeadlineItem.dispose();
+  }
+
+  private showNavigationItems(): void {
+    this.previousItem.show();
+    this.positionItem.show();
+    this.nextItem.show();
+    this.selectHeadlineItem.show();
+  }
+
+  private hideNavigationItems(): void {
+    this.previousItem.hide();
+    this.positionItem.hide();
+    this.nextItem.hide();
+    this.selectHeadlineItem.hide();
+  }
+}
+
 class HkLiveNewsController implements vscode.Disposable {
   private readonly scraper = new MultiSourceNewsScraper();
-  private readonly headlineStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 96);
-  private readonly previousStatusItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Left,
-    100,
-  );
-  private readonly positionStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
-  private readonly selectHeadlineStatusItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Left,
-    98,
-  );
-  private readonly nextStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
+  private readonly statusBar = new NewsStatusBar();
   private articles: readonly NewsArticle[] = [];
   private currentIndex = 0;
   private refreshTimer: NodeJS.Timeout | undefined;
@@ -374,23 +440,6 @@ class HkLiveNewsController implements vscode.Disposable {
   private isRefreshQueued = false;
   private isLoadingArticle = false;
   private isStopped = false;
-
-  public constructor() {
-    this.headlineStatusItem.command = "hklivenews.openCurrent";
-    this.headlineStatusItem.text = "$(newspaper) HK News";
-    this.headlineStatusItem.tooltip = "Start HK News refreshing to load the latest headlines.";
-    this.previousStatusItem.command = "hklivenews.prev";
-    this.previousStatusItem.text = "$(chevron-left)";
-    this.previousStatusItem.tooltip = "Previous HK News headline";
-    this.positionStatusItem.tooltip = "Current HK News headline";
-    this.nextStatusItem.command = "hklivenews.next";
-    this.nextStatusItem.text = "$(chevron-right)";
-    this.nextStatusItem.tooltip = "Next HK News headline";
-    this.selectHeadlineStatusItem.command = "hklivenews.selectHeadline";
-    this.selectHeadlineStatusItem.text = "$(menu)";
-    this.selectHeadlineStatusItem.tooltip = "Select an HK News headline";
-    this.headlineStatusItem.show();
-  }
 
   public async start(showError = true): Promise<void> {
     if (this.refreshTimer) {
@@ -414,7 +463,7 @@ class HkLiveNewsController implements vscode.Disposable {
     this.refreshTimer = undefined;
     this.clearAutoNextTimer();
     this.isStopped = true;
-    this.showPausedState();
+    this.statusBar.showPaused();
     void vscode.window.showInformationMessage("Stopped refreshing HK News.");
   }
 
@@ -424,7 +473,7 @@ class HkLiveNewsController implements vscode.Disposable {
     }
 
     this.isRefreshing = true;
-    this.showRefreshingState();
+    this.statusBar.showRefreshing();
 
     try {
       const articles = await this.scraper.fetchLatestArticles(
@@ -446,7 +495,7 @@ class HkLiveNewsController implements vscode.Disposable {
       await this.showCurrentArticle();
     } catch (error: unknown) {
       const message = getErrorMessage(error);
-      this.showUnavailableState(message);
+      this.statusBar.showUnavailable(message);
 
       if (showError) {
         void vscode.window.showErrorMessage(`Unable to refresh HK News: ${message}`);
@@ -534,12 +583,7 @@ class HkLiveNewsController implements vscode.Disposable {
     }
 
     this.clearAutoNextTimer();
-
-    this.headlineStatusItem.dispose();
-    this.previousStatusItem.dispose();
-    this.positionStatusItem.dispose();
-    this.nextStatusItem.dispose();
-    this.selectHeadlineStatusItem.dispose();
+    this.statusBar.dispose();
   }
 
   private async move(offset: number): Promise<void> {
@@ -568,7 +612,12 @@ class HkLiveNewsController implements vscode.Disposable {
       return;
     }
 
-    this.updateStatusBar(article, "Loading article details...");
+    this.statusBar.showArticle(
+      article,
+      "Loading article details...",
+      this.currentIndex,
+      this.articles.length,
+    );
 
     this.isLoadingArticle = true;
 
@@ -578,11 +627,21 @@ class HkLiveNewsController implements vscode.Disposable {
       this.articles = this.articles.map((item) => (item.url === article.url ? updatedArticle : item));
 
       if (!this.isStopped && this.isCurrentArticle(article.url)) {
-        this.updateStatusBar(updatedArticle, content || "No article text was found.");
+        this.statusBar.showArticle(
+          updatedArticle,
+          content || "No article text was found.",
+          this.currentIndex,
+          this.articles.length,
+        );
       }
     } catch {
       if (!this.isStopped && this.isCurrentArticle(article.url)) {
-        this.updateStatusBar(article, "Unable to load article details. Click to open the source page.");
+        this.statusBar.showArticle(
+          article,
+          "Unable to load article details. Click to open the source page.",
+          this.currentIndex,
+          this.articles.length,
+        );
       }
     } finally {
       this.isLoadingArticle = false;
@@ -596,44 +655,6 @@ class HkLiveNewsController implements vscode.Disposable {
 
     this.currentIndex = getNextNewsIndex(this.currentIndex, this.articles.length);
     await this.showCurrentArticle();
-  }
-
-  private updateStatusBar(article: NewsArticle, detail: string): void {
-    this.headlineStatusItem.text = `$(newspaper) ${formatHeadline(article.title, MAX_HEADLINE_LENGTH)}`;
-    this.headlineStatusItem.tooltip = `${article.title}\n\n${detail}\n\nPublished: ${formatPublishedAt(article.publishedAt)}\nSource: ${NEWS_SOURCE_DEFINITIONS[article.source].label}\nClick to open the article.`;
-    this.positionStatusItem.text = formatNewsPosition(this.currentIndex, this.articles.length);
-    this.showNavigationItems();
-  }
-
-  private showRefreshingState(): void {
-    this.headlineStatusItem.text = "$(sync~spin) Refreshing HK News";
-    this.hideNavigationItems();
-  }
-
-  private showPausedState(): void {
-    this.headlineStatusItem.text = "$(newspaper) HK News paused";
-    this.headlineStatusItem.tooltip = "HK News refreshing is paused.";
-    this.hideNavigationItems();
-  }
-
-  private showUnavailableState(message: string): void {
-    this.headlineStatusItem.text = "$(warning) HK News unavailable";
-    this.headlineStatusItem.tooltip = `Unable to refresh HK News: ${message}`;
-    this.hideNavigationItems();
-  }
-
-  private showNavigationItems(): void {
-    this.previousStatusItem.show();
-    this.positionStatusItem.show();
-    this.nextStatusItem.show();
-    this.selectHeadlineStatusItem.show();
-  }
-
-  private hideNavigationItems(): void {
-    this.previousStatusItem.hide();
-    this.positionStatusItem.hide();
-    this.nextStatusItem.hide();
-    this.selectHeadlineStatusItem.hide();
   }
 
   private clearAutoNextTimer(): void {
