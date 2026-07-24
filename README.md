@@ -4,16 +4,17 @@
  <img src="resources/hklivenews-icon.png" alt="HK Live News icon" width="128">
 </p>
 
-HK Live News brings the latest Chinese-language Hong Kong headlines into the VS Code status bar. It fetches your selected sources directly and opens the selected article in your browser.
+HK Live News brings the latest Chinese-language Hong Kong headlines into the VS Code status bar. It fetches your selected sources directly and opens selected articles in an internal VS Code webview.
 
 ## Features
 
-- Combines headlines from the selected sources, keeping the 50 most recently published items.
+- Combines headlines from the selected sources, keeping the 50 most recently published items in the status bar.
+- Shows source-grouped headlines in the Activity Bar sidebar, with up to 30 items per source.
 - Starts automatically when VS Code finishes starting, then refreshes every five minutes.
 - Advances to the next loaded headline every minute.
 - Shows the active headline, its position, and previous/next controls in the status bar.
 - Uses a fixed-width headline area, truncating long titles with `...`; hover over a headline to read its full title and an article-text excerpt.
-- Opens the selected source article when its headline is clicked.
+- Opens the selected article in an internal VS Code webview, with a link to the original article.
 
 The status bar uses this layout:
 
@@ -26,7 +27,7 @@ The status bar uses this layout:
 1. Open VS Code. HK Live News starts refreshing automatically after startup completes.
 2. Use the status-bar arrows or keyboard shortcuts to move through the current headlines.
 3. Click the list button beside the headline position to select a headline from the full list.
-4. Click a headline to open its source article.
+4. Click a headline to read it in an internal VS Code webview, then use the original-article link when needed.
 5. Run **Configure News Sources** from the Command Palette to select one or more sources with checkboxes.
 6. Run **Start Refreshing HK News (default 5 mins)** from the Command Palette to restart scheduled refreshing after it has been stopped.
 
@@ -80,12 +81,18 @@ Run `pnpm run watch` while developing to continuously compile the extension.
 ## Known Limitations
 
 - Headline and article extraction depends on the current source page structures. A site redesign can require scraper updates.
-- The extension displays up to 50 headlines per refresh.
-- Article-text excerpts in status-bar tooltips are limited to 6,000 characters.
+- The status bar displays up to 50 combined headlines per refresh; the sidebar displays up to 30 headlines for each selected source.
+- Each extracted text block in an article tooltip is limited to 6,000 characters.
 - `hklivenews.sources` controls the sources to combine; refreshing remains fixed at five minutes and automatic headline rotation at one minute.
 - VS Code does not provide extensions with status-bar hover events, so automatic rotation cannot pause specifically while the headline tooltip is open. Use **Stop Refreshing HK News** to pause it.
 
 ## Release Notes
+
+### 1.0.2
+
+- Added an Activity Bar sidebar that groups up to 30 headlines for each selected source.
+- Added VS Code webview, so articles can be read without opening an external browser.
+- Added in-memory article caching for faster repeat viewing.
 
 ### 1.0.1
 

@@ -1,9 +1,9 @@
 {
   "name": "hklivenews",
   "displayName": "HK Live News",
-  "description": "Read latest HK news from RTHK",
+  "description": "Read latest HK news from RTHK and other sources.",
   "publisher": "mchu1966",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "icon": "resources/hklivenews-icon.png",
   "license": "MIT",
   "repository": {
