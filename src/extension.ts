@@ -2,6 +2,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import { load } from "cheerio";
 import * as vscode from "vscode";
+import { NewsTreeProvider } from "./news-view";
 
 const LATEST_NEWS_URL = "https://news.rthk.hk/rthk/ch/latest-news.htm";
 const NOW_NEWS_LIST_URL =
@@ -18,7 +19,7 @@ const NEWS_SOURCES = ["rthk", "now"] as const;
 
 type NewsSource = (typeof NEWS_SOURCES)[number];
 
-interface NewsArticle {
+export interface NewsArticle {
   readonly title: string;
   readonly url: string;
   readonly source: NewsSource;
@@ -298,6 +299,47 @@ export function extractArticleContentFromHtml(html: string, source: NewsSource):
   return cleanText(content).slice(0, MAX_ARTICLE_CONTENT_LENGTH);
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>'"]/g, (character) => {
+    const entities: Readonly<Record<string, string>> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "'": "&#39;",
+      '"': "&quot;",
+    };
+
+    return entities[character] ?? character;
+  });
+}
+
+export function renderArticleWebview(article: NewsArticle, content: string): string {
+  const source = NEWS_SOURCE_DEFINITIONS[article.source].label;
+
+  return `<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(article.title)}</title>
+  <style>
+    body { color: var(--vscode-editor-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.7; margin: 0 auto; max-width: 760px; padding: 32px; }
+    h1 { font-size: 1.5em; line-height: 1.35; margin: 0 0 12px; }
+    .metadata { color: var(--vscode-descriptionForeground); margin: 0 0 28px; }
+    .content { white-space: pre-wrap; }
+    a { color: var(--vscode-textLink-foreground); }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(article.title)}</h1>
+  <p class="metadata">${escapeHtml(source)} · ${escapeHtml(formatPublishedAt(article.publishedAt))}</p>
+  <div class="content">${escapeHtml(content || "No article text was found.")}</div>
+  <p><a href="${escapeHtml(article.url)}">Open original article</a></p>
+</body>
+</html>`;
+}
+
 async function fetchHtml(url: string): Promise<string> {
   const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 
@@ -432,6 +474,7 @@ class NewsStatusBar implements vscode.Disposable {
 class HkLiveNewsController implements vscode.Disposable {
   private readonly scraper = new MultiSourceNewsScraper();
   private readonly statusBar = new NewsStatusBar();
+  private readonly treeDataProvider: NewsTreeProvider;
   private articles: readonly NewsArticle[] = [];
   private currentIndex = 0;
   private refreshTimer: NodeJS.Timeout | undefined;
@@ -440,6 +483,10 @@ class HkLiveNewsController implements vscode.Disposable {
   private isRefreshQueued = false;
   private isLoadingArticle = false;
   private isStopped = false;
+
+  public constructor(treeDataProvider: NewsTreeProvider) {
+    this.treeDataProvider = treeDataProvider;
+  }
 
   public async start(showError = true): Promise<void> {
     if (this.refreshTimer) {
@@ -476,9 +523,10 @@ class HkLiveNewsController implements vscode.Disposable {
     this.statusBar.showRefreshing();
 
     try {
-      const articles = await this.scraper.fetchLatestArticles(
-        getSelectedNewsSources(vscode.workspace.getConfiguration("hklivenews").get<unknown>("sources")),
+      const sources = getSelectedNewsSources(
+        vscode.workspace.getConfiguration("hklivenews").get<unknown>("sources"),
       );
+      const articles = await this.scraper.fetchLatestArticles(sources);
 
       if (this.isStopped) {
         return;
@@ -492,6 +540,7 @@ class HkLiveNewsController implements vscode.Disposable {
       const matchingIndex = articles.findIndex((article) => article.url === currentUrl);
       this.articles = articles;
       this.currentIndex = matchingIndex >= 0 ? matchingIndex : 0;
+      this.treeDataProvider.setArticles(this.articles, sources);
       await this.showCurrentArticle();
     } catch (error: unknown) {
       const message = getErrorMessage(error);
@@ -561,10 +610,19 @@ class HkLiveNewsController implements vscode.Disposable {
       selectedItems.map((item) => item.source),
       getNewsSourcesConfigurationTarget(configuration.inspect("sources")?.workspaceValue),
     );
+  }
 
-    if (this.refreshTimer) {
-      await this.refreshForSourceChange();
+  public async refreshForSourceChange(): Promise<void> {
+    if (!this.refreshTimer) {
+      return;
     }
+
+    if (this.isRefreshing) {
+      this.isRefreshQueued = true;
+      return;
+    }
+
+    await this.refresh(true);
   }
 
   public openCurrentArticle(): void {
@@ -572,6 +630,35 @@ class HkLiveNewsController implements vscode.Disposable {
 
     if (article) {
       void vscode.env.openExternal(vscode.Uri.parse(article.url));
+    }
+  }
+
+  public async showArticleInWebview(articleUrl: string): Promise<void> {
+    const article = this.articles.find((item) => item.url === articleUrl);
+
+    if (!article) {
+      void vscode.window.showInformationMessage("This HK News headline is no longer available.");
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      "hklivenews.article",
+      article.title,
+      vscode.ViewColumn.Active,
+      { enableScripts: false },
+    );
+    panel.webview.html = renderArticleWebview(article, "Loading article details...");
+
+    try {
+      const content = article.content ?? (await this.scraper.fetchArticleContent(article));
+      const updatedArticle = { ...article, content };
+      this.articles = this.articles.map((item) => (item.url === article.url ? updatedArticle : item));
+      panel.webview.html = renderArticleWebview(updatedArticle, content);
+    } catch {
+      panel.webview.html = renderArticleWebview(
+        article,
+        "Unable to load article details. Open the original article to read more.",
+      );
     }
   }
 
@@ -594,15 +681,6 @@ class HkLiveNewsController implements vscode.Disposable {
 
     this.currentIndex = (this.currentIndex + offset + this.articles.length) % this.articles.length;
     await this.showCurrentArticle();
-  }
-
-  private async refreshForSourceChange(): Promise<void> {
-    if (this.isRefreshing) {
-      this.isRefreshQueued = true;
-      return;
-    }
-
-    await this.refresh(true);
   }
 
   private async showCurrentArticle(): Promise<void> {
@@ -684,10 +762,13 @@ class HkLiveNewsController implements vscode.Disposable {
 let controller: HkLiveNewsController | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-  controller = new HkLiveNewsController();
+  const treeDataProvider = new NewsTreeProvider();
+  controller = new HkLiveNewsController(treeDataProvider);
 
   context.subscriptions.push(
     controller,
+    treeDataProvider,
+    vscode.window.registerTreeDataProvider("mainNewsContainer", treeDataProvider),
     vscode.commands.registerCommand("hklivenews.start", () => controller?.start()),
     vscode.commands.registerCommand("hklivenews.refresh", () => controller?.refresh(true)),
     vscode.commands.registerCommand("hklivenews.stop", () => controller?.stop()),
@@ -696,6 +777,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("hklivenews.selectHeadline", () => controller?.selectHeadline()),
     vscode.commands.registerCommand("hklivenews.configureSources", () => controller?.configureSources()),
     vscode.commands.registerCommand("hklivenews.openCurrent", () => controller?.openCurrentArticle()),
+    vscode.commands.registerCommand("hklivenews.openArticle", (articleUrl: string) =>
+      controller?.showArticleInWebview(articleUrl),
+    ),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("hklivenews.sources")) {
+        void controller?.refreshForSourceChange();
+      }
+    }),
   );
 
   void controller.start(false);

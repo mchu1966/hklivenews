@@ -16,10 +16,12 @@ import {
   mergeNewsArticlesByPublicationDate,
   parseNewsArticlesFromHtml,
   parseNowNewsArticlesFromJson,
+  renderArticleWebview,
   toNowArticleUrl,
   toRthkArticleUrl,
   truncateHeadline,
 } from "../extension";
+import { groupArticlesBySource, NewsTreeProvider } from "../news-view";
 
 suite("Extension Test Suite", () => {
   vscode.window.showInformationMessage("Start all tests.");
@@ -198,5 +200,62 @@ suite("Extension Test Suite", () => {
   test("updates the active configuration scope for news sources", () => {
     assert.strictEqual(getNewsSourcesConfigurationTarget(undefined), vscode.ConfigurationTarget.Global);
     assert.strictEqual(getNewsSourcesConfigurationTarget(["rthk"]), vscode.ConfigurationTarget.Workspace);
+  });
+
+  test("groups tree headlines into every selected source section", () => {
+    assert.deepStrictEqual(
+      groupArticlesBySource(
+        [
+          { title: "RTHK headline", url: "https://example.com/rthk", source: "rthk", publishedAt: 1 },
+          { title: "Now headline", url: "https://example.com/now", source: "now", publishedAt: 2 },
+        ],
+        ["rthk", "now"],
+      ),
+      [
+        {
+          source: "rthk",
+          articles: [
+            { title: "RTHK headline", url: "https://example.com/rthk", source: "rthk", publishedAt: 1 },
+          ],
+        },
+        {
+          source: "now",
+          articles: [
+            { title: "Now headline", url: "https://example.com/now", source: "now", publishedAt: 2 },
+          ],
+        },
+      ],
+    );
+  });
+
+  test("assigns stable IDs to source sections and article items", () => {
+    const provider = new NewsTreeProvider();
+    const sourceItem = provider.getTreeItem({ source: "rthk", articles: [] });
+    const articleItem = provider.getTreeItem({
+      title: "RTHK headline",
+      url: "https://example.com/rthk",
+      source: "rthk",
+      publishedAt: 1,
+    });
+
+    assert.strictEqual(sourceItem.id, "source:rthk");
+    assert.strictEqual(articleItem.id, "article:https://example.com/rthk");
+    provider.dispose();
+  });
+
+  test("renders article webview content without interpreting article text as HTML", () => {
+    const html = renderArticleWebview(
+      {
+        title: "<strong>Headline</strong>",
+        url: "https://example.com/article?title=<headline>",
+        source: "rthk",
+        publishedAt: Date.parse("2026-07-22T12:34:00+08:00"),
+      },
+      "Article <script>alert('unsafe')</script>",
+    );
+
+    assert.ok(html.includes("&lt;strong&gt;Headline&lt;/strong&gt;"));
+    assert.ok(html.includes("Article &lt;script&gt;alert(&#39;unsafe&#39;)&lt;/script&gt;"));
+    assert.ok(html.includes("default-src 'none'"));
   });
 });

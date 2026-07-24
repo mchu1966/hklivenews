@@ -95,13 +95,30 @@
           }
         }
       }
+    },
+    "views": {
+      "newsContainer": [
+        {
+          "id": "mainNewsContainer",
+          "name": "HK Live News"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "newsContainer",
+          "title": "HK Live News",
+          "icon": "resources/view-icon.svg"
+        }
+      ]
     }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run compile && pnpm run bundle",
     "bundle": "esbuild ./out/extension.js --bundle --platform=node --format=cjs --outfile=dist/extension.js --external:vscode",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "watch": "tsc -watch -p ./ & esbuild ./src/extension.ts --bundle --platform=node --format=cjs --outfile=dist/extension.js --external:vscode --watch",
     "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
