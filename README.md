@@ -88,6 +88,10 @@ Run `pnpm run watch` while developing to continuously compile the extension.
 
 ## Release Notes
 
+### 1.0.3
+
+- Remove the related news in news article webview, for Now News.
+
 ### 1.0.2
 
 - Added an Activity Bar sidebar that groups up to 30 headlines for each selected source.

@@ -3,7 +3,7 @@
   "displayName": "HK Live News",
   "description": "Read latest HK news from RTHK and other sources.",
   "publisher": "mchu1966",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "icon": "resources/hklivenews-icon.png",
   "license": "MIT",
   "repository": {
