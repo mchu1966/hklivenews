@@ -4,7 +4,7 @@ HK Live News brings the latest Chinese-language Hong Kong headlines into the VS 
 
 ## Features
 
-- Combines up to 50 current headlines from RTHK and Now News.
+- Combines the 50 most recently published headlines from RTHK and Now News.
 - Starts automatically when VS Code finishes starting, then refreshes every five minutes.
 - Advances to the next loaded headline every minute.
 - Shows the active headline, its position, and previous/next controls in the status bar.
@@ -36,7 +36,7 @@ Use `hklivenews.sources` to choose one or more sources. The default is `rthk`.
 }
 ```
 
-Available values are `rthk` (RTHK Chinese latest news) and `now` (Now News local news). When multiple sources are selected, their headlines are combined in the status bar. The source name appears in each article tooltip.
+Available values are `rthk` (RTHK Chinese latest news) and `now` (Now News local news). When multiple sources are selected, their headlines are combined and sorted by publication time in the status bar. The source name appears in each article tooltip.
 
 ## Commands
 

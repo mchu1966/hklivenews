@@ -7,12 +7,15 @@ import {
   extractArticleContentFromHtml,
   formatHeadline,
   formatNewsPosition,
+  formatPublishedAt,
   getHeadlineQuickPickItems,
   getNewsSourcesConfigurationTarget,
   getNextNewsIndex,
   getSelectedNewsSources,
   getSourceQuickPickItems,
+  mergeNewsArticlesByPublicationDate,
   parseNewsArticlesFromHtml,
+  parseNowNewsArticlesFromJson,
   toNowArticleUrl,
   toRthkArticleUrl,
   truncateHeadline,
@@ -50,8 +53,14 @@ suite("Extension Test Suite", () => {
   test("parses validated RTHK headlines from server-rendered HTML", () => {
     const articles = parseNewsArticlesFromHtml(
       `
-        <a href="/rthk/ch/component/k2/1863167-20260722.htm"> 第一則 RTHK 新聞 </a>
-        <a href="/rthk/ch/component/k2/1863167-20260722.htm"> 重複新聞 </a>
+        <div class="ns2-inner">
+          <a href="/rthk/ch/component/k2/1863167-20260722.htm"> 第一則 RTHK 新聞 </a>
+          <div class="ns2-created">2026-07-22 HKT 12:34</div>
+        </div>
+        <div class="ns2-inner">
+          <a href="/rthk/ch/component/k2/1863167-20260722.htm"> 重複新聞 </a>
+          <div class="ns2-created">2026-07-22 HKT 12:33</div>
+        </div>
         <a href="/rthk/ch/latest-news.htm"> 非文章連結 </a>
       `,
       "rthk",
@@ -62,17 +71,17 @@ suite("Extension Test Suite", () => {
         title: "第一則 RTHK 新聞",
         url: "https://news.rthk.hk/rthk/ch/component/k2/1863167-20260722.htm",
         source: "rthk",
+        publishedAt: Date.parse("2026-07-22T12:34:00+08:00"),
       },
     ]);
   });
 
-  test("parses validated Now News headlines from server-rendered HTML", () => {
-    const articles = parseNewsArticlesFromHtml(
-      `
-        <a href="/home/local/player?newsId=655631"> 第一則 Now 新聞 </a>
-        <a href="/home/local/player?newsId=not-a-number"> 非文章連結 </a>
-      `,
-      "now",
+  test("parses validated Now News headlines and publication dates from its list API", () => {
+    const articles = parseNowNewsArticlesFromJson(
+      JSON.stringify([
+        { newsId: "655631", title: " 第一則 Now 新聞 ", publishDate: 1_784_852_800_000 },
+        { newsId: "not-a-number", title: "非文章連結", publishDate: 1_784_852_800_001 },
+      ]),
     );
 
     assert.deepStrictEqual(articles, [
@@ -80,8 +89,52 @@ suite("Extension Test Suite", () => {
         title: "第一則 Now 新聞",
         url: "https://news.now.com/home/local/player?newsId=655631",
         source: "now",
+        publishedAt: 1_784_852_800_000,
       },
     ]);
+  });
+
+  test("sorts merged sources by publication date before limiting the article list", () => {
+    const articles = mergeNewsArticlesByPublicationDate([
+      {
+        title: "Older RTHK news",
+        url: "https://news.rthk.hk/rthk/ch/component/k2/1863167-20260722.htm",
+        source: "rthk",
+        publishedAt: 1_000,
+      },
+      {
+        title: "Newest Now news",
+        url: "https://news.now.com/home/local/player?newsId=655631",
+        source: "now",
+        publishedAt: 3_000,
+      },
+      {
+        title: "Middle Now news",
+        url: "https://news.now.com/home/local/player?newsId=655632",
+        source: "now",
+        publishedAt: 2_000,
+      },
+    ]);
+
+    assert.deepStrictEqual(
+      articles.map((article) => article.title),
+      ["Newest Now news", "Middle Now news", "Older RTHK news"],
+    );
+  });
+
+  test("keeps the 50 most recently published articles across all sources", () => {
+    const articles = mergeNewsArticlesByPublicationDate(
+      Array.from({ length: 51 }, (_, index) => ({
+        title: `News ${index}`,
+        url: `https://news.now.com/home/local/player?newsId=${index + 1}`,
+        source: "now" as const,
+        publishedAt: index,
+      })),
+    );
+
+    assert.strictEqual(articles.length, 50);
+    assert.strictEqual(articles[0]?.title, "News 50");
+    assert.strictEqual(articles.at(-1)?.title, "News 1");
   });
 
   test("extracts and normalizes server-rendered article content", () => {
@@ -95,6 +148,10 @@ suite("Extension Test Suite", () => {
   test("formats the one-based current news position", () => {
     assert.strictEqual(formatNewsPosition(0, 12), "1/12");
     assert.strictEqual(formatNewsPosition(11, 12), "12/12");
+  });
+
+  test("formats publication dates in Hong Kong time for article tooltips", () => {
+    assert.strictEqual(formatPublishedAt(Date.parse("2026-07-22T12:34:00+08:00")), "2026-07-22 12:34 HKT");
   });
 
   test("truncates long status-bar headlines with an ellipsis", () => {

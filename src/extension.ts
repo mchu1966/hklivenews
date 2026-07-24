@@ -4,6 +4,8 @@ import { load } from "cheerio";
 import * as vscode from "vscode";
 
 const LATEST_NEWS_URL = "https://news.rthk.hk/rthk/ch/latest-news.htm";
+const NOW_NEWS_LIST_URL =
+  "https://newsapi1.now.com/pccw-news-api/api/getNewsListv2?category=119&pageNo=1&pageSize=50";
 const RTHK_HOSTNAME = "news.rthk.hk";
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const AUTO_NEXT_INTERVAL_MS = 60 * 1000;
@@ -11,6 +13,7 @@ const MAX_ARTICLES = 50;
 const MAX_ARTICLE_CONTENT_LENGTH = 6_000;
 const MAX_HEADLINE_LENGTH = 32;
 const FETCH_TIMEOUT_MS = 30_000;
+const HONG_KONG_UTC_OFFSET_MS = 8 * 60 * 60 * 1_000;
 const NEWS_SOURCES = ["rthk", "now"] as const;
 
 type NewsSource = (typeof NEWS_SOURCES)[number];
@@ -19,6 +22,7 @@ interface NewsArticle {
   readonly title: string;
   readonly url: string;
   readonly source: NewsSource;
+  readonly publishedAt: number;
   readonly content?: string;
 }
 
@@ -38,6 +42,7 @@ export interface SourceQuickPickItem {
 interface NewsLink {
   readonly title: string;
   readonly href: string;
+  readonly publishedAt: number;
 }
 
 interface NewsSourceDefinition {
@@ -88,7 +93,7 @@ const NEWS_SOURCE_DEFINITIONS: Readonly<Record<NewsSource, NewsSourceDefinition>
   now: {
     label: "Now News",
     description: "Now News local news",
-    latestNewsUrl: "https://news.now.com/home/local",
+    latestNewsUrl: NOW_NEWS_LIST_URL,
     articleLinkSelector: 'a[href*="/home/local/player?newsId="]',
     contentSelector: "article, main",
     toArticleUrl: toNowArticleUrl,
@@ -127,6 +132,17 @@ export function getNewsSourcesConfigurationTarget(workspaceValue: unknown): vsco
 
 export function formatNewsPosition(currentIndex: number, totalNews: number): string {
   return `${currentIndex + 1}/${totalNews}`;
+}
+
+export function formatPublishedAt(publishedAt: number): string {
+  const date = new Date(publishedAt + HONG_KONG_UTC_OFFSET_MS);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day} ${hour}:${minute} HKT`;
 }
 
 export function getNextNewsIndex(currentIndex: number, totalNews: number): number {
@@ -187,12 +203,28 @@ function toNewsArticles(
     const url = toArticleUrl(link.href);
     const title = cleanText(link.title);
 
-    if (url && title && !articles.some((article) => article.url === url)) {
-      articles.push({ title, url, source });
+    if (
+      url &&
+      title &&
+      Number.isFinite(link.publishedAt) &&
+      !articles.some((article) => article.url === url)
+    ) {
+      articles.push({ title, url, source, publishedAt: link.publishedAt });
     }
   }
 
-  return articles.slice(0, MAX_ARTICLES);
+  return articles;
+}
+
+function parseRthkPublicationDate(value: string): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2}) HKT (\d{2}):(\d{2})$/.exec(cleanText(value));
+
+  if (!match) {
+    return Number.NaN;
+  }
+
+  const [, year, month, day, hour, minute] = match;
+  return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour) - 8, Number(minute));
 }
 
 export function parseNewsArticlesFromHtml(html: string, source: NewsSource): readonly NewsArticle[] {
@@ -202,10 +234,61 @@ export function parseNewsArticlesFromHtml(html: string, source: NewsSource): rea
     .map((_, anchor) => ({
       title: $(anchor).text(),
       href: $(anchor).attr("href") ?? "",
+      publishedAt: parseRthkPublicationDate($(anchor).closest(".ns2-inner").find(".ns2-created").text()),
     }))
     .get();
 
   return toNewsArticles(links, source, definition.toArticleUrl);
+}
+
+function getNowNewsItems(data: unknown): readonly unknown[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (typeof data === "object" && data !== null && "newsList" in data && Array.isArray(data.newsList)) {
+    return data.newsList;
+  }
+
+  return [];
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null;
+}
+
+export function parseNowNewsArticlesFromJson(json: string): readonly NewsArticle[] {
+  let data: unknown;
+
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error("Now News returned invalid list data.");
+  }
+
+  const items = getNowNewsItems(data);
+  const links = items.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+
+    const { newsId, title, publishDate } = item;
+
+    return typeof newsId === "string" && typeof title === "string" && typeof publishDate === "number"
+      ? [{ title, href: `/home/local/player?newsId=${newsId}`, publishedAt: publishDate }]
+      : [];
+  });
+
+  return toNewsArticles(links, "now", toNowArticleUrl);
+}
+
+export function mergeNewsArticlesByPublicationDate(articles: readonly NewsArticle[]): readonly NewsArticle[] {
+  return [...articles]
+    .filter(
+      (article, index, allArticles) => allArticles.findIndex((item) => item.url === article.url) === index,
+    )
+    .sort((first, second) => second.publishedAt - first.publishedAt)
+    .slice(0, MAX_ARTICLES);
 }
 
 export function extractArticleContentFromHtml(html: string, source: NewsSource): string {
@@ -232,9 +315,11 @@ class NewsScraper {
   ) {}
 
   public async fetchLatestArticles(): Promise<readonly NewsArticle[]> {
-    const html = await fetchHtml(this.definition.latestNewsUrl);
+    const latestNews = await fetchHtml(this.definition.latestNewsUrl);
 
-    return parseNewsArticlesFromHtml(html, this.source);
+    return this.source === "now"
+      ? parseNowNewsArticlesFromJson(latestNews)
+      : parseNewsArticlesFromHtml(latestNews, this.source);
   }
 
   public async fetchArticleContent(articleUrl: string): Promise<string> {
@@ -258,11 +343,7 @@ class MultiSourceNewsScraper {
       );
     }
 
-    return articles
-      .filter(
-        (article, index, allArticles) => allArticles.findIndex((item) => item.url === article.url) === index,
-      )
-      .slice(0, MAX_ARTICLES);
+    return mergeNewsArticlesByPublicationDate(articles);
   }
 
   public async fetchArticleContent(article: NewsArticle): Promise<string> {
@@ -519,7 +600,7 @@ class HkLiveNewsController implements vscode.Disposable {
 
   private updateStatusBar(article: NewsArticle, detail: string): void {
     this.headlineStatusItem.text = `$(newspaper) ${formatHeadline(article.title, MAX_HEADLINE_LENGTH)}`;
-    this.headlineStatusItem.tooltip = `${article.title}\n\n${detail}\n\nSource: ${NEWS_SOURCE_DEFINITIONS[article.source].label}\nClick to open the article.`;
+    this.headlineStatusItem.tooltip = `${article.title}\n\n${detail}\n\nPublished: ${formatPublishedAt(article.publishedAt)}\nSource: ${NEWS_SOURCE_DEFINITIONS[article.source].label}\nClick to open the article.`;
     this.positionStatusItem.text = formatNewsPosition(this.currentIndex, this.articles.length);
     this.showNavigationItems();
   }
