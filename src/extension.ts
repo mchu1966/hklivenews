@@ -319,6 +319,17 @@ export function mergeNewsArticlesByPublicationDate(articles: readonly NewsArticl
   return sortNewsArticlesByPublicationDate(articles).slice(0, MAX_ARTICLES);
 }
 
+export function applyCachedArticleContent(
+  articles: readonly NewsArticle[],
+  articleContentsByUrl: ReadonlyMap<string, NewsArticleContent>,
+): readonly NewsArticle[] {
+  return articles.map((article) => {
+    const content = articleContentsByUrl.get(article.url);
+
+    return content ? { ...article, content } : article;
+  });
+}
+
 function toSafeMediaUrl(value: string | undefined, baseUrl: string): string | undefined {
   if (!value) {
     return undefined;
@@ -624,6 +635,7 @@ class HkLiveNewsController implements vscode.Disposable {
   private readonly scraper = new MultiSourceNewsScraper();
   private readonly statusBar = new NewsStatusBar();
   private readonly treeDataProvider: NewsTreeProvider;
+  private readonly articleContentsByUrl = new Map<string, NewsArticleContent>();
   private articles: readonly NewsArticle[] = [];
   private sourceArticles: readonly NewsArticle[] = [];
   private currentIndex = 0;
@@ -676,17 +688,18 @@ class HkLiveNewsController implements vscode.Disposable {
       const sources = getSelectedNewsSources(
         vscode.workspace.getConfiguration("hklivenews").get<unknown>("sources"),
       );
-      const sourceArticles = await this.scraper.fetchLatestArticles(sources);
+      const fetchedSourceArticles = await this.scraper.fetchLatestArticles(sources);
 
       if (this.isStopped) {
         return;
       }
 
-      if (sourceArticles.length === 0) {
+      if (fetchedSourceArticles.length === 0) {
         throw new Error("The selected sources did not return any current article links.");
       }
 
       const currentUrl = this.articles[this.currentIndex]?.url;
+      const sourceArticles = applyCachedArticleContent(fetchedSourceArticles, this.articleContentsByUrl);
       const articles = mergeNewsArticlesByPublicationDate(sourceArticles);
       const matchingIndex = articles.findIndex((article) => article.url === currentUrl);
       this.articles = articles;
@@ -807,7 +820,11 @@ class HkLiveNewsController implements vscode.Disposable {
     try {
       const content = article.content ?? (await this.scraper.fetchArticleContent(article));
       const updatedArticle = { ...article, content };
+      this.cacheArticleContent(updatedArticle);
       this.articles = this.articles.map((item) => (item.url === article.url ? updatedArticle : item));
+      this.sourceArticles = this.sourceArticles.map((item) =>
+        item.url === article.url ? updatedArticle : item,
+      );
       panel.webview.html = renderArticleWebview(updatedArticle, content);
     } catch {
       panel.webview.html = renderArticleWebview(
@@ -857,7 +874,11 @@ class HkLiveNewsController implements vscode.Disposable {
     try {
       const content = article.content ?? (await this.scraper.fetchArticleContent(article));
       const updatedArticle = { ...article, content };
+      this.cacheArticleContent(updatedArticle);
       this.articles = this.articles.map((item) => (item.url === article.url ? updatedArticle : item));
+      this.sourceArticles = this.sourceArticles.map((item) =>
+        item.url === article.url ? updatedArticle : item,
+      );
 
       if (!this.isStopped && this.isCurrentArticle(article.url)) {
         this.statusBar.showArticle(
@@ -895,6 +916,22 @@ class HkLiveNewsController implements vscode.Disposable {
       clearInterval(this.autoNextTimer);
       this.autoNextTimer = undefined;
     }
+  }
+
+  private cacheArticleContent(article: NewsArticle): void {
+    if (!article.content) {
+      return;
+    }
+
+    if (!this.articleContentsByUrl.has(article.url) && this.articleContentsByUrl.size >= MAX_ARTICLES) {
+      const oldestUrl = this.articleContentsByUrl.keys().next().value;
+
+      if (oldestUrl) {
+        this.articleContentsByUrl.delete(oldestUrl);
+      }
+    }
+
+    this.articleContentsByUrl.set(article.url, article.content);
   }
 
   private getCurrentArticle(): NewsArticle | undefined {

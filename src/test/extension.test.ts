@@ -4,6 +4,7 @@ import * as assert from "assert";
 // as well as import your extension to test it
 import * as vscode from "vscode";
 import {
+  applyCachedArticleContent,
   extractArticleContentFromHtml,
   formatHeadline,
   formatNewsPosition,
@@ -153,6 +154,23 @@ suite("Extension Test Suite", () => {
 
     assert.strictEqual(sortNewsArticlesByPublicationDate(articles).length, 70);
     assert.strictEqual(mergeNewsArticlesByPublicationDate(articles).length, 50);
+  });
+
+  test("keeps downloaded article content when refreshing matching headlines", () => {
+    const cachedContent = { blocks: [{ type: "text" as const, text: "Cached details" }] };
+    const articles = applyCachedArticleContent(
+      [
+        {
+          title: "Updated headline",
+          url: "https://news.now.com/home/local/player?newsId=655631",
+          source: "now" as const,
+          publishedAt: 1_784_852_800_000,
+        },
+      ],
+      new Map([["https://news.now.com/home/local/player?newsId=655631", cachedContent]]),
+    );
+
+    assert.deepStrictEqual(articles[0]?.content, cachedContent);
   });
 
   test("extracts safe text, image, and direct-video blocks from article HTML", () => {
