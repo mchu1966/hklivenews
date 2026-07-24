@@ -345,6 +345,10 @@ export function extractArticleContentFromHtml(
   const articleRoot = $(NEWS_SOURCE_DEFINITIONS[source].contentSelector).first();
   const blocks: NewsArticleBlock[] = [];
 
+  if (source === "now") {
+    articleRoot.find(".relatedNewsWrap").remove();
+  }
+
   articleRoot.find("script, style, noscript, iframe, object, embed, template").remove();
   articleRoot.find("p, h1, h2, h3, h4, li, img, video").each((_, element) => {
     const node = $(element);

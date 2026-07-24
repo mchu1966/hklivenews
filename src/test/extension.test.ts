@@ -201,6 +201,31 @@ suite("Extension Test Suite", () => {
     assert.deepStrictEqual(extractArticleContentFromHtml("<main></main>", "rthk"), { blocks: [] });
   });
 
+  test("excludes the related-news section from Now News article details", () => {
+    assert.deepStrictEqual(
+      extractArticleContentFromHtml(
+        `
+          <main>
+            <article>
+              <p>這是新聞正文。</p>
+            </article>
+            <div class="relatedNewsWrap">
+              <ul class="relatedNews">
+                <li>
+                  <img src="/images/related-news.jpg" alt="相關新聞圖片">
+                  <a href="/home/local/player?newsId=655632">另一則新聞</a>
+                </li>
+              </ul>
+            </div>
+          </main>
+        `,
+        "now",
+        "https://news.now.com/home/local/player?newsId=655631",
+      ),
+      { blocks: [{ type: "text", text: "這是新聞正文。" }] },
+    );
+  });
+
   test("formats the one-based current news position", () => {
     assert.strictEqual(formatNewsPosition(0, 12), "1/12");
     assert.strictEqual(formatNewsPosition(11, 12), "12/12");
