@@ -2,7 +2,17 @@
 // Import the module and reference it with the alias vscode in your code below
 import { load } from "cheerio";
 import * as vscode from "vscode";
+import { formatPublishedAt, getNextNewsIndex } from "./news-formatters";
+import { NewsStatusBar } from "./news-status-bar";
 import { NewsTreeProvider } from "./news-view";
+
+export {
+  formatHeadline,
+  formatNewsPosition,
+  formatPublishedAt,
+  getNextNewsIndex,
+  truncateHeadline,
+} from "./news-formatters";
 
 const LATEST_NEWS_URL = "https://news.rthk.hk/rthk/ch/latest-news.htm";
 const NOW_NEWS_LIST_URL =
@@ -12,9 +22,7 @@ const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const AUTO_NEXT_INTERVAL_MS = 60 * 1000;
 const MAX_ARTICLES = 50;
 const MAX_ARTICLE_CONTENT_LENGTH = 6_000;
-const MAX_HEADLINE_LENGTH = 32;
 const FETCH_TIMEOUT_MS = 30_000;
-const HONG_KONG_UTC_OFFSET_MS = 8 * 60 * 60 * 1_000;
 const NEWS_SOURCES = ["rthk", "now"] as const;
 const DIRECT_VIDEO_FILE_EXTENSIONS = /\.(mp4|webm|ogv|ogg)$/i;
 
@@ -153,46 +161,6 @@ export function getNewsSourcesConfigurationTarget(workspaceValue: unknown): vsco
   return workspaceValue === undefined
     ? vscode.ConfigurationTarget.Global
     : vscode.ConfigurationTarget.Workspace;
-}
-
-export function formatNewsPosition(currentIndex: number, totalNews: number): string {
-  return `${currentIndex + 1}/${totalNews}`;
-}
-
-export function formatPublishedAt(publishedAt: number): string {
-  const date = new Date(publishedAt + HONG_KONG_UTC_OFFSET_MS);
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  const hour = String(date.getUTCHours()).padStart(2, "0");
-  const minute = String(date.getUTCMinutes()).padStart(2, "0");
-
-  return `${year}-${month}-${day} ${hour}:${minute} HKT`;
-}
-
-export function getNextNewsIndex(currentIndex: number, totalNews: number): number {
-  return totalNews === 0 ? 0 : (currentIndex + 1) % totalNews;
-}
-
-export function truncateHeadline(headline: string, maxLength: number): string {
-  const characters = Array.from(headline);
-
-  if (characters.length <= maxLength) {
-    return headline;
-  }
-
-  if (maxLength <= 3) {
-    return ".".repeat(maxLength);
-  }
-
-  return `${characters.slice(0, maxLength - 3).join("")}...`;
-}
-
-export function formatHeadline(headline: string, maxLength: number): string {
-  const displayHeadline = truncateHeadline(headline, maxLength);
-  const paddingLength = Math.max(0, maxLength - Array.from(displayHeadline).length);
-
-  return `${displayHeadline}${"\u00a0".repeat(paddingLength)}`;
 }
 
 export function getHeadlineQuickPickItems(
@@ -552,82 +520,6 @@ class MultiSourceNewsScraper {
     return new NewsScraper(article.source, NEWS_SOURCE_DEFINITIONS[article.source]).fetchArticleContent(
       article.url,
     );
-  }
-}
-
-class NewsStatusBar implements vscode.Disposable {
-  private readonly headlineItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 96);
-  private readonly previousItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  private readonly positionItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
-  private readonly selectHeadlineItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
-  private readonly nextItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
-
-  public constructor() {
-    this.headlineItem.command = "hklivenews.openCurrent";
-    this.headlineItem.text = "$(newspaper) HK News";
-    this.headlineItem.tooltip = "Start HK News refreshing to load the latest headlines.";
-    this.previousItem.command = "hklivenews.prev";
-    this.previousItem.text = "$(chevron-left)";
-    this.previousItem.tooltip = "Previous HK News headline";
-    this.positionItem.tooltip = "Current HK News headline";
-    this.nextItem.command = "hklivenews.next";
-    this.nextItem.text = "$(chevron-right)";
-    this.nextItem.tooltip = "Next HK News headline";
-    this.selectHeadlineItem.command = "hklivenews.selectHeadline";
-    this.selectHeadlineItem.text = "$(menu)";
-    this.selectHeadlineItem.tooltip = "Select an HK News headline";
-    this.headlineItem.show();
-  }
-
-  public showArticle(
-    article: NewsArticle,
-    detail: string,
-    currentIndex: number,
-    totalArticles: number,
-  ): void {
-    this.headlineItem.text = `$(newspaper) ${formatHeadline(article.title, MAX_HEADLINE_LENGTH)}`;
-    this.headlineItem.tooltip = `${article.title}\n\n${detail}\n\nPublished: ${formatPublishedAt(article.publishedAt)}\nSource: ${NEWS_SOURCE_DEFINITIONS[article.source].label}\nClick to open the article.`;
-    this.positionItem.text = formatNewsPosition(currentIndex, totalArticles);
-    this.showNavigationItems();
-  }
-
-  public showRefreshing(): void {
-    this.headlineItem.text = "$(sync~spin) Refreshing HK News";
-    this.hideNavigationItems();
-  }
-
-  public showPaused(): void {
-    this.headlineItem.text = "$(newspaper) HK News paused";
-    this.headlineItem.tooltip = "HK News refreshing is paused.";
-    this.hideNavigationItems();
-  }
-
-  public showUnavailable(message: string): void {
-    this.headlineItem.text = "$(warning) HK News unavailable";
-    this.headlineItem.tooltip = `Unable to refresh HK News: ${message}`;
-    this.hideNavigationItems();
-  }
-
-  public dispose(): void {
-    this.headlineItem.dispose();
-    this.previousItem.dispose();
-    this.positionItem.dispose();
-    this.nextItem.dispose();
-    this.selectHeadlineItem.dispose();
-  }
-
-  private showNavigationItems(): void {
-    this.previousItem.show();
-    this.positionItem.show();
-    this.nextItem.show();
-    this.selectHeadlineItem.show();
-  }
-
-  private hideNavigationItems(): void {
-    this.previousItem.hide();
-    this.positionItem.hide();
-    this.nextItem.hide();
-    this.selectHeadlineItem.hide();
   }
 }
 
