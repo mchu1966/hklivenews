@@ -307,13 +307,16 @@ export function parseNowNewsArticlesFromJson(json: string): readonly NewsArticle
   return toNewsArticles(links, "now", toNowArticleUrl);
 }
 
-export function mergeNewsArticlesByPublicationDate(articles: readonly NewsArticle[]): readonly NewsArticle[] {
+export function sortNewsArticlesByPublicationDate(articles: readonly NewsArticle[]): readonly NewsArticle[] {
   return [...articles]
     .filter(
       (article, index, allArticles) => allArticles.findIndex((item) => item.url === article.url) === index,
     )
-    .sort((first, second) => second.publishedAt - first.publishedAt)
-    .slice(0, MAX_ARTICLES);
+    .sort((first, second) => second.publishedAt - first.publishedAt);
+}
+
+export function mergeNewsArticlesByPublicationDate(articles: readonly NewsArticle[]): readonly NewsArticle[] {
+  return sortNewsArticlesByPublicationDate(articles).slice(0, MAX_ARTICLES);
 }
 
 function toSafeMediaUrl(value: string | undefined, baseUrl: string): string | undefined {
@@ -531,7 +534,7 @@ class MultiSourceNewsScraper {
       );
     }
 
-    return mergeNewsArticlesByPublicationDate(articles);
+    return sortNewsArticlesByPublicationDate(articles);
   }
 
   public async fetchArticleContent(article: NewsArticle): Promise<NewsArticleContent> {
@@ -622,6 +625,7 @@ class HkLiveNewsController implements vscode.Disposable {
   private readonly statusBar = new NewsStatusBar();
   private readonly treeDataProvider: NewsTreeProvider;
   private articles: readonly NewsArticle[] = [];
+  private sourceArticles: readonly NewsArticle[] = [];
   private currentIndex = 0;
   private refreshTimer: NodeJS.Timeout | undefined;
   private autoNextTimer: NodeJS.Timeout | undefined;
@@ -672,21 +676,23 @@ class HkLiveNewsController implements vscode.Disposable {
       const sources = getSelectedNewsSources(
         vscode.workspace.getConfiguration("hklivenews").get<unknown>("sources"),
       );
-      const articles = await this.scraper.fetchLatestArticles(sources);
+      const sourceArticles = await this.scraper.fetchLatestArticles(sources);
 
       if (this.isStopped) {
         return;
       }
 
-      if (articles.length === 0) {
+      if (sourceArticles.length === 0) {
         throw new Error("The selected sources did not return any current article links.");
       }
 
       const currentUrl = this.articles[this.currentIndex]?.url;
+      const articles = mergeNewsArticlesByPublicationDate(sourceArticles);
       const matchingIndex = articles.findIndex((article) => article.url === currentUrl);
       this.articles = articles;
+      this.sourceArticles = sourceArticles;
       this.currentIndex = matchingIndex >= 0 ? matchingIndex : 0;
-      this.treeDataProvider.setArticles(this.articles, sources);
+      this.treeDataProvider.setArticles(sourceArticles, sources);
       await this.showCurrentArticle();
     } catch (error: unknown) {
       const message = getErrorMessage(error);
@@ -780,7 +786,7 @@ class HkLiveNewsController implements vscode.Disposable {
   }
 
   public async showArticleInWebview(articleUrl: string): Promise<void> {
-    const article = this.articles.find((item) => item.url === articleUrl);
+    const article = this.sourceArticles.find((item) => item.url === articleUrl);
 
     if (!article) {
       void vscode.window.showInformationMessage("This HK News headline is no longer available.");

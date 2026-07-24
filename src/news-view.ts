@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 
+const MAX_ARTICLES_PER_SOURCE = 30;
+
 export interface NewsTreeArticle {
   readonly title: string;
   readonly url: string;
@@ -20,7 +22,7 @@ export function groupArticlesBySource(
 ): readonly SourceSection[] {
   return sources.map((source) => ({
     source,
-    articles: articles.filter((article) => article.source === source),
+    articles: articles.filter((article) => article.source === source).slice(0, MAX_ARTICLES_PER_SOURCE),
   }));
 }
 

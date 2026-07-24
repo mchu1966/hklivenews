@@ -17,6 +17,7 @@ import {
   parseNewsArticlesFromHtml,
   parseNowNewsArticlesFromJson,
   renderArticleWebview,
+  sortNewsArticlesByPublicationDate,
   toNowArticleUrl,
   toRthkArticleUrl,
   truncateHeadline,
@@ -139,6 +140,21 @@ suite("Extension Test Suite", () => {
     assert.strictEqual(articles.at(-1)?.title, "News 1");
   });
 
+  test("keeps every source article available for the sidebar before applying the status bar limit", () => {
+    const sourceArticles = ["rthk", "now"] as const;
+    const articles = sourceArticles.flatMap((source) =>
+      Array.from({ length: 35 }, (_, index) => ({
+        title: `${source} news ${index + 1}`,
+        url: `https://example.com/${source}/${index + 1}`,
+        source,
+        publishedAt: index,
+      })),
+    );
+
+    assert.strictEqual(sortNewsArticlesByPublicationDate(articles).length, 70);
+    assert.strictEqual(mergeNewsArticlesByPublicationDate(articles).length, 50);
+  });
+
   test("extracts safe text, image, and direct-video blocks from article HTML", () => {
     assert.deepStrictEqual(
       extractArticleContentFromHtml(
@@ -246,6 +262,29 @@ suite("Extension Test Suite", () => {
         },
       ],
     );
+  });
+
+  test("limits each sidebar source section to 30 headlines", () => {
+    const groupedArticles = groupArticlesBySource(
+      [
+        ...Array.from({ length: 35 }, (_, index) => ({
+          title: `RTHK headline ${index + 1}`,
+          url: `https://example.com/rthk/${index + 1}`,
+          source: "rthk" as const,
+          publishedAt: index,
+        })),
+        ...Array.from({ length: 35 }, (_, index) => ({
+          title: `Now headline ${index + 1}`,
+          url: `https://example.com/now/${index + 1}`,
+          source: "now" as const,
+          publishedAt: index,
+        })),
+      ],
+      ["rthk", "now"],
+    );
+
+    assert.strictEqual(groupedArticles[0]?.articles.length, 30);
+    assert.strictEqual(groupedArticles[1]?.articles.length, 30);
   });
 
   test("assigns stable IDs to source sections and article items", () => {
