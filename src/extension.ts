@@ -771,11 +771,11 @@ class HkLiveNewsController implements vscode.Disposable {
     await this.refresh(true);
   }
 
-  public openCurrentArticle(): void {
+  public async openCurrentArticle(): Promise<void> {
     const article = this.articles[this.currentIndex];
 
     if (article) {
-      void vscode.env.openExternal(vscode.Uri.parse(article.url));
+      await this.showArticleInWebview(article.url);
     }
   }
 
