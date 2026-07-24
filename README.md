@@ -86,30 +86,14 @@ Run `pnpm run watch` while developing to continuously compile the extension.
 - `hklivenews.sources` controls the sources to combine; refreshing remains fixed at five minutes and automatic headline rotation at one minute.
 - VS Code does not provide extensions with status-bar hover events, so automatic rotation cannot pause specifically while the headline tooltip is open. Use **Stop Refreshing HK News** to pause it.
 
-## Release Notes
+## Changelog
 
-### 1.0.3
+Check the [CHANGELOG.md](https://github.com/mchu1966/hklivenews/blob/HEAD/CHANGELOG.md) for any version changes.
 
-- Remove the related news in news article webview, for Now News.
+## Reporting issues
 
-### 1.0.2
-
-- Added an Activity Bar sidebar that groups up to 30 headlines for each selected source.
-- Added VS Code webview, so articles can be read without opening an external browser.
-- Added in-memory article caching for faster repeat viewing.
-
-### 1.0.1
-
-- Added optional Now News local headlines alongside RTHK.
-- Added source selection through `hklivenews.sources` and the **Configure News Sources** command.
-- Added publication time to the status-bar tooltip for each headline.
-
-### 1.0.0
-
-- First stable release of HK Live News.
-- Brings current Chinese-language RTHK headlines to the VS Code status bar.
-- Includes automatic five-minute refreshes, one-minute headline rotation, status-bar navigation, and article links.
+Report any issues on the github [issues](https://github.com/mchu1966/hklivenews/issues) page. Follow the template and add as much information as possible.
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/mchu1966/hklivenews/blob/HEAD/LICENSE) file for details
