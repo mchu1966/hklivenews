@@ -1,6 +1,6 @@
 # HK Live News
 
-HK Live News brings the latest Chinese-language Hong Kong headlines into the VS Code status bar. It scrapes your selected sources with Puppeteer and opens the selected article in your browser.
+HK Live News brings the latest Chinese-language Hong Kong headlines into the VS Code status bar. It fetches your selected sources directly and opens the selected article in your browser.
 
 ## Features
 
@@ -59,13 +59,6 @@ Available values are `rthk` (RTHK Chinese latest news) and `now` (Now News local
 
 - VS Code `1.125.0` or later.
 - Network access to the selected source websites.
-- A Puppeteer-compatible Chrome installation. If Puppeteer did not download Chrome during dependency installation, run:
-
- ```sh
- pnpm exec puppeteer browsers install chrome
- ```
-
-On Linux, Chrome may also require the system libraries listed in the [Puppeteer troubleshooting guide](https://pptr.dev/troubleshooting).
 
 ## Development
 

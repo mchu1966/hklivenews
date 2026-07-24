@@ -1,5 +1,6 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
+import { load } from "cheerio";
 import * as vscode from "vscode";
 
 const LATEST_NEWS_URL = "https://news.rthk.hk/rthk/ch/latest-news.htm";
@@ -9,6 +10,7 @@ const AUTO_NEXT_INTERVAL_MS = 60 * 1000;
 const MAX_ARTICLES = 50;
 const MAX_ARTICLE_CONTENT_LENGTH = 6_000;
 const MAX_HEADLINE_LENGTH = 32;
+const FETCH_TIMEOUT_MS = 30_000;
 const NEWS_SOURCES = ["rthk", "now"] as const;
 
 type NewsSource = (typeof NEWS_SOURCES)[number];
@@ -37,29 +39,6 @@ interface NewsSourceDefinition {
   readonly articleLinkSelector: string;
   readonly contentSelector: string;
   readonly toArticleUrl: (value: string) => string | undefined;
-}
-
-interface PuppeteerPage {
-  goto(
-    url: string,
-    options: { readonly waitUntil: "domcontentloaded"; readonly timeout: number },
-  ): Promise<unknown>;
-  waitForSelector(selector: string, options: { readonly timeout: number }): Promise<unknown>;
-  $$eval<T>(selector: string, pageFunction: (elements: Element[]) => T): Promise<T>;
-  evaluate<T, Argument>(pageFunction: (argument: Argument) => T, argument: Argument): Promise<T>;
-}
-
-interface PuppeteerBrowser {
-  newPage(): Promise<PuppeteerPage>;
-  close(): Promise<void>;
-}
-
-interface PuppeteerModule {
-  launch(options: { readonly headless: true }): Promise<PuppeteerBrowser>;
-}
-
-async function loadPuppeteer(): Promise<PuppeteerModule> {
-  return Function("moduleName", "return import(moduleName)")("puppeteer") as Promise<PuppeteerModule>;
 }
 
 export function toRthkArticleUrl(value: string): string | undefined {
@@ -189,6 +168,36 @@ function toNewsArticles(
   return articles.slice(0, MAX_ARTICLES);
 }
 
+export function parseNewsArticlesFromHtml(html: string, source: NewsSource): readonly NewsArticle[] {
+  const definition = NEWS_SOURCE_DEFINITIONS[source];
+  const $ = load(html);
+  const links = $(definition.articleLinkSelector)
+    .map((_, anchor) => ({
+      title: $(anchor).text(),
+      href: $(anchor).attr("href") ?? "",
+    }))
+    .get();
+
+  return toNewsArticles(links, source, definition.toArticleUrl);
+}
+
+export function extractArticleContentFromHtml(html: string, source: NewsSource): string {
+  const $ = load(html);
+  const content = $(NEWS_SOURCE_DEFINITIONS[source].contentSelector).first().text();
+
+  return cleanText(content).slice(0, MAX_ARTICLE_CONTENT_LENGTH);
+}
+
+async function fetchHtml(url: string): Promise<string> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}.`);
+  }
+
+  return response.text();
+}
+
 class NewsScraper {
   public constructor(
     private readonly source: NewsSource,
@@ -196,44 +205,15 @@ class NewsScraper {
   ) {}
 
   public async fetchLatestArticles(): Promise<readonly NewsArticle[]> {
-    const puppeteer = await loadPuppeteer();
-    const browser = await puppeteer.launch({ headless: true });
+    const html = await fetchHtml(this.definition.latestNewsUrl);
 
-    try {
-      const page = await browser.newPage();
-      await page.goto(this.definition.latestNewsUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      await page.waitForSelector(this.definition.articleLinkSelector, { timeout: 15_000 });
-
-      const links = await page.$$eval(this.definition.articleLinkSelector, (anchors) =>
-        anchors.map((anchor) => ({
-          title: anchor.textContent ?? "",
-          href: (anchor as HTMLAnchorElement).href,
-        })),
-      );
-
-      return toNewsArticles(links, this.source, this.definition.toArticleUrl);
-    } finally {
-      await browser.close();
-    }
+    return parseNewsArticlesFromHtml(html, this.source);
   }
 
   public async fetchArticleContent(articleUrl: string): Promise<string> {
-    const puppeteer = await loadPuppeteer();
-    const browser = await puppeteer.launch({ headless: true });
+    const html = await fetchHtml(articleUrl);
 
-    try {
-      const page = await browser.newPage();
-      await page.goto(articleUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-
-      const content = await page.evaluate(
-        (contentSelector) => document.querySelector(contentSelector)?.textContent ?? "",
-        this.definition.contentSelector,
-      );
-
-      return cleanText(content).slice(0, MAX_ARTICLE_CONTENT_LENGTH);
-    } finally {
-      await browser.close();
-    }
+    return extractArticleContentFromHtml(html, this.source);
   }
 }
 

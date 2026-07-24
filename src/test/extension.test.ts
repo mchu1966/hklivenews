@@ -4,11 +4,13 @@ import * as assert from "assert";
 // as well as import your extension to test it
 import * as vscode from "vscode";
 import {
+  extractArticleContentFromHtml,
   formatHeadline,
   formatNewsPosition,
   getHeadlineQuickPickItems,
   getNextNewsIndex,
   getSelectedNewsSources,
+  parseNewsArticlesFromHtml,
   toNowArticleUrl,
   toRthkArticleUrl,
   truncateHeadline,
@@ -41,6 +43,51 @@ suite("Extension Test Suite", () => {
     );
     assert.strictEqual(toNowArticleUrl("https://news.now.com/home/local/player?newsId=abc"), undefined);
     assert.strictEqual(toNowArticleUrl("https://example.com/home/local/player?newsId=655631"), undefined);
+  });
+
+  test("parses validated RTHK headlines from server-rendered HTML", () => {
+    const articles = parseNewsArticlesFromHtml(
+      `
+        <a href="/rthk/ch/component/k2/1863167-20260722.htm"> 第一則 RTHK 新聞 </a>
+        <a href="/rthk/ch/component/k2/1863167-20260722.htm"> 重複新聞 </a>
+        <a href="/rthk/ch/latest-news.htm"> 非文章連結 </a>
+      `,
+      "rthk",
+    );
+
+    assert.deepStrictEqual(articles, [
+      {
+        title: "第一則 RTHK 新聞",
+        url: "https://news.rthk.hk/rthk/ch/component/k2/1863167-20260722.htm",
+        source: "rthk",
+      },
+    ]);
+  });
+
+  test("parses validated Now News headlines from server-rendered HTML", () => {
+    const articles = parseNewsArticlesFromHtml(
+      `
+        <a href="/home/local/player?newsId=655631"> 第一則 Now 新聞 </a>
+        <a href="/home/local/player?newsId=not-a-number"> 非文章連結 </a>
+      `,
+      "now",
+    );
+
+    assert.deepStrictEqual(articles, [
+      {
+        title: "第一則 Now 新聞",
+        url: "https://news.now.com/home/local/player?newsId=655631",
+        source: "now",
+      },
+    ]);
+  });
+
+  test("extracts and normalizes server-rendered article content", () => {
+    assert.strictEqual(
+      extractArticleContentFromHtml("<article> 第一段\n 第二段 </article>", "now"),
+      "第一段 第二段",
+    );
+    assert.strictEqual(extractArticleContentFromHtml("<main></main>", "rthk"), "");
   });
 
   test("formats the one-based current news position", () => {

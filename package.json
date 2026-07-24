@@ -28,7 +28,7 @@
   "activationEvents": [
     "onStartupFinished"
   ],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -93,13 +93,14 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run compile",
+    "vscode:prepublish": "pnpm run compile && pnpm run bundle",
+    "bundle": "esbuild ./out/extension.js --bundle --platform=node --format=cjs --outfile=dist/extension.js --external:vscode",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
-    "package": "vsce package",
+    "package": "vsce package --no-dependencies",
     "publish": "vsce publish"
   },
   "devDependencies": {
@@ -110,6 +111,7 @@
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.1",
     "eslint": "^10.5.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1"
@@ -119,6 +121,6 @@
     "serialize-javascript": "^7.0.6"
   },
   "dependencies": {
-    "puppeteer": "^25.3.0"
+    "cheerio": "^1.2.0"
   }
 }
