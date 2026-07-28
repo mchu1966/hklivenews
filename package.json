@@ -3,7 +3,7 @@
   "displayName": "HK Live News",
   "description": "Read latest HK news from RTHK and other sources.",
   "publisher": "mchu1966",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "icon": "resources/hklivenews-icon.png",
   "license": "MIT",
   "repository": {
@@ -27,7 +27,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onChatParticipant:news-chat.reporter"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -112,7 +113,22 @@
           "icon": "resources/view-icon.svg"
         }
       ]
-    }
+    },
+    "chatParticipants": [
+      {
+        "id": "news-chat.reporter",
+        "fullName": "HK Live News Reporter",
+        "name": "hklivenews-reporter",
+        "description": "What do you want to know about today's HK news?",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "hk-news-today",
+            "description": "Summarize today's HK news headlines"
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "pnpm run compile && pnpm run bundle",

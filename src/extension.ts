@@ -3,6 +3,7 @@
 import { load } from "cheerio";
 import * as vscode from "vscode";
 import { formatPublishedAt, getNextNewsIndex } from "./news-formatters";
+import { createNewsReporter } from "./news-reporter";
 import { NewsStatusBar } from "./news-status-bar";
 import { NewsTreeProvider } from "./news-view";
 
@@ -558,6 +559,10 @@ class HkLiveNewsController implements vscode.Disposable {
     await this.refresh(showError);
   }
 
+  public getArticles(): readonly NewsArticle[] {
+    return this.articles;
+  }
+
   public stop(): void {
     if (!this.refreshTimer) {
       void vscode.window.showInformationMessage("HK News refreshing is not running.");
@@ -852,9 +857,11 @@ let controller: HkLiveNewsController | undefined;
 export function activate(context: vscode.ExtensionContext): void {
   const treeDataProvider = new NewsTreeProvider();
   controller = new HkLiveNewsController(treeDataProvider);
+  const reporter = createNewsReporter(() => controller?.getArticles() ?? []);
 
   context.subscriptions.push(
     controller,
+    reporter,
     treeDataProvider,
     vscode.window.registerTreeDataProvider("mainNewsContainer", treeDataProvider),
     vscode.commands.registerCommand("hklivenews.start", () => controller?.start()),

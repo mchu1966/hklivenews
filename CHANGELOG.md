@@ -4,6 +4,13 @@ All notable changes to the "hklivenews" extension will be documented in this fil
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.0.4]
+
+- Added the `@hklivenews-reporter` chat participant for questions about the current scraped HK Live News articles.
+- Added `/hk-news-today` for factual, cited daily news summaries.
+- Reporter answers use inline related-news links.
+- Reporter answers use only the extension's current in-memory article list and prompt users to refresh when no articles are available.
+
 ## [1.0.3]
 
 - Remove the related news in news article webview, for Now News.

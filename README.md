@@ -15,6 +15,7 @@ HK Live News brings the latest Chinese-language Hong Kong headlines into the VS 
 - Shows the active headline, its position, and previous/next controls in the status bar.
 - Uses a fixed-width headline area, truncating long titles with `...`; hover over a headline to read its full title and an article-text excerpt.
 - Opens the selected article in an internal VS Code webview, with a link to the original article.
+- Provides `@hklivenews-reporter`, a chat participant grounded in the same currently scraped articles shown by the extension.
 
 The status bar uses this layout:
 
@@ -30,6 +31,14 @@ The status bar uses this layout:
 4. Click a headline to read it in an internal VS Code webview, then use the original-article link when needed.
 5. Run **Configure News Sources** from the Command Palette to select one or more sources with checkboxes.
 6. Run **Start Refreshing HK News (default 5 mins)** from the Command Palette to restart scheduled refreshing after it has been stopped.
+
+## Chat Reporter
+
+Use `@hklivenews-reporter` in VS Code Chat to ask questions about the articles currently loaded by HK Live News. Use `/hk-news-today` with the participant for a factual summary of today's available headlines.
+
+The reporter uses only the in-memory articles already scraped by the extension. It does not search the web or fetch additional articles. When the requested information is absent, or no articles have loaded yet, it says so and suggests running **HK Live News: Manually refresh HK News**.
+
+Reporter answers list related headlines as clickable links that open the original articles in your external browser.
 
 ## Settings
 
@@ -83,6 +92,7 @@ Run `pnpm run watch` while developing to continuously compile the extension.
 - Headline and article extraction depends on the current source page structures. A site redesign can require scraper updates.
 - The status bar displays up to 50 combined headlines per refresh; the sidebar displays up to 30 headlines for each selected source.
 - Each extracted text block in an article tooltip is limited to 6,000 characters.
+- The chat reporter can answer only from the current in-memory article list. Article details appear only after the extension has already loaded them.
 - `hklivenews.sources` controls the sources to combine; refreshing remains fixed at five minutes and automatic headline rotation at one minute.
 - VS Code does not provide extensions with status-bar hover events, so automatic rotation cannot pause specifically while the headline tooltip is open. Use **Stop Refreshing HK News** to pause it.
 
