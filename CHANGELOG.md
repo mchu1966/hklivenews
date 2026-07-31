@@ -4,10 +4,11 @@ All notable changes to the "hklivenews" extension will be documented in this fil
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [1.0.5]
 
 - Fixed RTHK article webviews rendering as a single block of text by preserving `<br>` line breaks during HTML extraction.
 - Article text blocks now render `<br>` tags for newline characters, ensuring reliable display across all sources.
+- README.md add preview section for feature preview.
 
 ## [1.0.4]
 

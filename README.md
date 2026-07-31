@@ -15,13 +15,20 @@ HK Live News brings the latest Chinese-language Hong Kong headlines into the VS 
 - Shows the active headline, its position, and previous/next controls in the status bar.
 - Uses a fixed-width headline area, truncating long titles with `...`; hover over a headline to read its full title and an article-text excerpt.
 - Opens the selected article in an internal VS Code webview, with a link to the original article.
-- Provides `@hklivenews-reporter`, a chat participant grounded in the same currently scraped articles shown by the extension.
 
-The status bar uses this layout:
+### Preview
 
-```text
-<  1/20 ≡ >  HK headline...
-```
+![Status bar](resources/status-bar.png)
+*Status bar.*
+
+![Headline selection](resources/headline-selection.png)
+*Headline selection.*
+
+![News webview](resources/news-webview.png)
+*News webview.*
+
+![Chat reporter](resources/news-chat.png)
+*Chat reporter.* extension.
 
 ## Usage
 
@@ -54,22 +61,22 @@ Available values are `rthk` (RTHK Chinese latest news) and `now` (Now News local
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `HK Live News: Start Refreshing HK News (default 5 mins)` | Fetches current news and starts five-minute refreshes. |
-| `HK Live News: Manually refresh HK News` | Fetches the latest headlines immediately. |
-| `HK Live News: Stop Refreshing HK News` | Stops scheduled refreshes. |
-| `HK Live News: Show Next HK News Headline` | Selects the next headline. |
-| `HK Live News: Show Previous HK News Headline` | Selects the previous headline. |
-| `HK Live News: Select HK News Headline` | Opens the headline picker. |
-| `HK Live News: Configure News Sources` | Opens a checkbox list to select the sources to combine. |
+| Command                                                   | Description                                             |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| `HK Live News: Start Refreshing HK News (default 5 mins)` | Fetches current news and starts five-minute refreshes.  |
+| `HK Live News: Manually refresh HK News`                  | Fetches the latest headlines immediately.               |
+| `HK Live News: Stop Refreshing HK News`                   | Stops scheduled refreshes.                              |
+| `HK Live News: Show Next HK News Headline`                | Selects the next headline.                              |
+| `HK Live News: Show Previous HK News Headline`            | Selects the previous headline.                          |
+| `HK Live News: Select HK News Headline`                   | Opens the headline picker.                              |
+| `HK Live News: Configure News Sources`                    | Opens a checkbox list to select the sources to combine. |
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-| --- | --- |
-| `Alt+D` | Show the next headline. |
-| `Alt+A` | Show the previous headline. |
+| Shortcut | Action                      |
+| -------- | --------------------------- |
+| `Alt+D`  | Show the next headline.     |
+| `Alt+A`  | Show the previous headline. |
 
 ## Requirements
 
