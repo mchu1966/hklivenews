@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { getSourceLabel } from "./news-formatters";
 
 const MAX_ARTICLES_PER_SOURCE = 30;
 
@@ -42,7 +43,7 @@ export class NewsTreeProvider implements vscode.TreeDataProvider<NewsTreeElement
   public getTreeItem(element: NewsTreeElement): vscode.TreeItem {
     if (this.isSourceSection(element)) {
       const item = new vscode.TreeItem(
-        `${this.getSourceLabel(element.source)} (${element.articles.length})`,
+        `${getSourceLabel(element.source)} (${element.articles.length})`,
         vscode.TreeItemCollapsibleState.Expanded,
       );
       item.id = `source:${element.source}`;
@@ -80,9 +81,5 @@ export class NewsTreeProvider implements vscode.TreeDataProvider<NewsTreeElement
 
   private isSourceSection(element: NewsTreeElement): element is SourceSection {
     return "articles" in element;
-  }
-
-  private getSourceLabel(source: string): string {
-    return source === "rthk" ? "RTHK" : source === "now" ? "Now News" : source;
   }
 }

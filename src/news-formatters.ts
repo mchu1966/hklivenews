@@ -1,5 +1,28 @@
 const HONG_KONG_UTC_OFFSET_MS = 8 * 60 * 60 * 1_000;
 
+export type NewsSource = "rthk" | "now";
+
+const SOURCE_LABELS: Readonly<Record<NewsSource, string>> = {
+  rthk: "RTHK",
+  now: "Now News",
+};
+
+export function getSourceLabel(source: string): string {
+  return SOURCE_LABELS[source as NewsSource] ?? source;
+}
+
+export function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  if (maxLength <= 3) {
+    return ".".repeat(maxLength);
+  }
+
+  return value.slice(0, maxLength - 3) + "...";
+}
+
 export function formatNewsPosition(currentIndex: number, totalNews: number): string {
   return `${currentIndex + 1}/${totalNews}`;
 }
@@ -24,10 +47,6 @@ export function truncateHeadline(headline: string, maxLength: number): string {
 
   if (characters.length <= maxLength) {
     return headline;
-  }
-
-  if (maxLength <= 3) {
-    return ".".repeat(maxLength);
   }
 
   return `${characters.slice(0, maxLength - 3).join("")}...`;

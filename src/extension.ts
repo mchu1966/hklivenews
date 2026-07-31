@@ -2,7 +2,16 @@
 // Import the module and reference it with the alias vscode in your code below
 import { load } from "cheerio";
 import * as vscode from "vscode";
-import { formatPublishedAt, getNextNewsIndex } from "./news-formatters";
+import {
+  formatHeadline,
+  formatNewsPosition,
+  formatPublishedAt,
+  getNextNewsIndex,
+  getSourceLabel,
+  truncateHeadline,
+  truncateText,
+  type NewsSource,
+} from "./news-formatters";
 import { createNewsReporter } from "./news-reporter";
 import { NewsStatusBar } from "./news-status-bar";
 import { NewsTreeProvider } from "./news-view";
@@ -12,7 +21,9 @@ export {
   formatNewsPosition,
   formatPublishedAt,
   getNextNewsIndex,
+  getSourceLabel,
   truncateHeadline,
+  truncateText,
 } from "./news-formatters";
 
 const LATEST_NEWS_URL = "https://news.rthk.hk/rthk/ch/latest-news.htm";
@@ -26,8 +37,6 @@ const MAX_ARTICLE_CONTENT_LENGTH = 6_000;
 const FETCH_TIMEOUT_MS = 30_000;
 const NEWS_SOURCES = ["rthk", "now"] as const;
 const DIRECT_VIDEO_FILE_EXTENSIONS = /\.(mp4|webm|ogv|ogg)$/i;
-
-type NewsSource = (typeof NEWS_SOURCES)[number];
 
 export interface NewsArticle {
   readonly title: string;
@@ -178,6 +187,16 @@ function cleanText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function extractTextPreservingLineBreaks(html: string): string {
+  return html
+    .split(/<br\s*\/?>/gi)
+    .map((part) => part.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    .join("\n")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{2,}/g, "\n\n")
+    .trim();
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -320,12 +339,6 @@ function isDirectVideoUrl(url: string, mimeType: string | undefined): boolean {
   );
 }
 
-function getTextArticleBlock(text: string): TextArticleBlock | undefined {
-  const normalizedText = cleanText(text).slice(0, MAX_ARTICLE_CONTENT_LENGTH);
-
-  return normalizedText ? { type: "text", text: normalizedText } : undefined;
-}
-
 function createTextArticleContent(text: string): NewsArticleContent {
   return { blocks: [{ type: "text", text }] };
 }
@@ -381,19 +394,25 @@ export function extractArticleContentFromHtml(
     }
 
     if (node.parents("p, h1, h2, h3, h4, li").length === 0) {
-      const block = getTextArticleBlock(node.text());
+      const articleText = extractTextPreservingLineBreaks(node.html() ?? "").slice(
+        0,
+        MAX_ARTICLE_CONTENT_LENGTH,
+      );
 
-      if (block) {
-        blocks.push(block);
+      if (articleText) {
+        blocks.push({ type: "text", text: articleText });
       }
     }
   });
 
   if (blocks.length === 0) {
-    const block = getTextArticleBlock(articleRoot.text());
+    const articleText = extractTextPreservingLineBreaks(articleRoot.html() ?? "").slice(
+      0,
+      MAX_ARTICLE_CONTENT_LENGTH,
+    );
 
-    if (block) {
-      blocks.push(block);
+    if (articleText) {
+      blocks.push({ type: "text", text: articleText });
     }
   }
 
@@ -432,7 +451,7 @@ function renderArticleBlocks(article: NewsArticle, content: NewsArticleContent):
   return content.blocks
     .map((block) => {
       if (block.type === "text") {
-        return `<p>${escapeHtml(block.text)}</p>`;
+        return `<p>${escapeHtml(block.text).replace(/\n/g, "<br>")}</p>`;
       }
 
       if (block.type === "image") {

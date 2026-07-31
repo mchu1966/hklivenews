@@ -85,7 +85,14 @@ pnpm run lint
 pnpm test
 ```
 
-Run `pnpm run watch` while developing to continuously compile the extension.
+Run `pnpm run watch` while developing to continuously compile and bundle the extension.
+
+The build pipeline has two steps:
+
+1. `tsc` compiles TypeScript from `src/` to `out/`
+2. `esbuild` bundles `out/` into `dist/extension.js` (the file VS Code actually loads)
+
+Run `pnpm run bundle` after `pnpm run compile` to rebuild the distributable, or use `pnpm run watch` to do both automatically on file changes.
 
 ## Known Limitations
 

@@ -1,12 +1,12 @@
 import * as vscode from "vscode";
 import type { NewsArticle } from "./extension";
-import { formatPublishedAt } from "./news-formatters";
+import { formatPublishedAt, getSourceLabel, truncateText } from "./news-formatters";
 
 export const MAX_SCRAPED_NEWS_CONTEXT_LENGTH = 12_000;
 
-const MAX_HEADLINE_LENGTH = 500;
-const MAX_URL_LENGTH = 1_000;
-const MAX_ARTICLE_TEXT_LENGTH = 2_000;
+const REPORTER_MAX_HEADLINE_LENGTH = 500;
+const REPORTER_MAX_URL_LENGTH = 1_000;
+const REPORTER_MAX_ARTICLE_TEXT_LENGTH = 2_000;
 const SCRAPED_NEWS_LIST_OPEN_TAG = "<scraped-news-list>";
 const SCRAPED_NEWS_LIST_CLOSE_TAG = "</scraped-news-list>";
 const EMPTY_SCRAPED_NEWS_MESSAGE = "No current scraped articles are available. Please refresh HK Live News.";
@@ -44,14 +44,6 @@ interface ReporterArticleContext {
   readonly content?: string;
 }
 
-function truncateText(value: string, maximumLength: number): string {
-  return value.length <= maximumLength ? value : value.slice(0, Math.max(0, maximumLength - 3)) + "...";
-}
-
-function getSourceLabel(source: NewsArticle["source"]): string {
-  return source === "rthk" ? "RTHK" : "Now News";
-}
-
 function getArticleText(article: NewsArticle): string | undefined {
   const text = (article.content?.blocks ?? [])
     .filter((block) => block.type === "text")
@@ -59,7 +51,7 @@ function getArticleText(article: NewsArticle): string | undefined {
     .filter(Boolean)
     .join(" ");
 
-  return text ? truncateText(text, MAX_ARTICLE_TEXT_LENGTH) : undefined;
+  return text ? truncateText(text, REPORTER_MAX_ARTICLE_TEXT_LENGTH) : undefined;
 }
 
 function toReporterArticleContext(article: NewsArticle): ReporterArticleContext {
@@ -68,8 +60,8 @@ function toReporterArticleContext(article: NewsArticle): ReporterArticleContext 
   return {
     source: getSourceLabel(article.source),
     publishedAt: formatPublishedAt(article.publishedAt),
-    headline: truncateText(article.title, MAX_HEADLINE_LENGTH),
-    url: truncateText(article.url, MAX_URL_LENGTH),
+    headline: truncateText(article.title, REPORTER_MAX_HEADLINE_LENGTH),
+    url: truncateText(article.url, REPORTER_MAX_URL_LENGTH),
     ...(content ? { content } : {}),
   };
 }

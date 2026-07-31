@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
-import { formatHeadline, formatNewsPosition, formatPublishedAt } from "./news-formatters";
+import { formatHeadline, formatNewsPosition, formatPublishedAt, getSourceLabel } from "./news-formatters";
 
-const MAX_HEADLINE_LENGTH = 32;
+const STATUS_BAR_HEADLINE_LENGTH = 32;
 
 export interface NewsStatusArticle {
   readonly title: string;
@@ -39,8 +39,8 @@ export class NewsStatusBar implements vscode.Disposable {
     currentIndex: number,
     totalArticles: number,
   ): void {
-    this.headlineItem.text = `$(newspaper) ${formatHeadline(article.title, MAX_HEADLINE_LENGTH)}`;
-    this.headlineItem.tooltip = `${article.title}\n\n${detail}\n\nPublished: ${formatPublishedAt(article.publishedAt)}\nSource: ${this.getSourceLabel(article.source)}\nClick to open the article.`;
+    this.headlineItem.text = `$(newspaper) ${formatHeadline(article.title, STATUS_BAR_HEADLINE_LENGTH)}`;
+    this.headlineItem.tooltip = `${article.title}\n\n${detail}\n\nPublished: ${formatPublishedAt(article.publishedAt)}\nSource: ${getSourceLabel(article.source)}\nClick to open the article.`;
     this.positionItem.text = formatNewsPosition(currentIndex, totalArticles);
     this.showNavigationItems();
   }
@@ -82,9 +82,5 @@ export class NewsStatusBar implements vscode.Disposable {
     this.positionItem.hide();
     this.nextItem.hide();
     this.selectHeadlineItem.hide();
-  }
-
-  private getSourceLabel(source: string): string {
-    return source === "rthk" ? "RTHK" : source === "now" ? "Now News" : source;
   }
 }

@@ -226,6 +226,35 @@ suite("Extension Test Suite", () => {
     );
   });
 
+  test("preserves <br> line breaks while collapsing other whitespace", () => {
+    assert.deepStrictEqual(
+      extractArticleContentFromHtml(
+        `
+          <main>
+            <p>這是第一段。<br>這是第二段。<br><br>這是第三段。</p>
+          </main>
+        `,
+        "rthk",
+        "https://news.rthk.hk/rthk/ch/component/k2/1234567-20260731.htm",
+      ),
+      { blocks: [{ type: "text", text: "這是第一段。\n這是第二段。\n\n這是第三段。" }] },
+    );
+    assert.deepStrictEqual(
+      extractArticleContentFromHtml(
+        `
+          <div class="itemFullText">
+            第一行文字<br/>
+            第二行文字<br/>
+            第三行文字
+          </div>
+        `,
+        "rthk",
+        "https://news.rthk.hk/rthk/ch/component/k2/1234567-20260731.htm",
+      ),
+      { blocks: [{ type: "text", text: "第一行文字\n第二行文字\n第三行文字" }] },
+    );
+  });
+
   test("formats the one-based current news position", () => {
     assert.strictEqual(formatNewsPosition(0, 12), "1/12");
     assert.strictEqual(formatNewsPosition(11, 12), "12/12");
