@@ -1,37 +1,29 @@
 import * as assert from "assert";
-
-// You can import and use all API from the 'vscode' module
-// as well as import your extension to test it
 import * as vscode from "vscode";
+import { getNewsSourcesConfigurationTarget } from "../extension";
+import { getNewsSourceHandler, toNowArticleUrl, toRthkArticleUrl } from "../handlers/news-source-handler";
 import {
   applyCachedArticleContent,
-  extractArticleContentFromHtml,
+  mergeNewsArticlesByPublicationDate,
+  sortNewsArticlesByPublicationDate,
+} from "../helpers/news-article-utils";
+import {
+  getHeadlineQuickPickItems,
+  getSelectedNewsSources,
+  getSourceQuickPickItems,
+} from "../helpers/news-selection-helpers";
+import {
   formatHeadline,
   formatNewsPosition,
   formatPublishedAt,
-  getHeadlineQuickPickItems,
-  getNewsSourcesConfigurationTarget,
   getNextNewsIndex,
-  getSelectedNewsSources,
-  getSourceQuickPickItems,
-  mergeNewsArticlesByPublicationDate,
-  parseNewsArticlesFromHtml,
-  parseNowNewsArticlesFromJson,
-  renderArticleWebview,
-  sortNewsArticlesByPublicationDate,
-  toNowArticleUrl,
-  toRthkArticleUrl,
   truncateHeadline,
-} from "../extension";
+} from "../news-formatters";
 import { groupArticlesBySource, NewsTreeProvider } from "../news-view";
+import { renderArticleWebview } from "../renderers/article-webview-renderer";
 
 suite("Extension Test Suite", () => {
   vscode.window.showInformationMessage("Start all tests.");
-
-  test("Sample test", () => {
-    assert.strictEqual(-1, [1, 2, 3].indexOf(5));
-    assert.strictEqual(-1, [1, 2, 3].indexOf(0));
-  });
 
   test("accepts only RTHK Chinese K2 article links", () => {
     assert.strictEqual(
@@ -55,7 +47,7 @@ suite("Extension Test Suite", () => {
   });
 
   test("parses validated RTHK headlines from server-rendered HTML", () => {
-    const articles = parseNewsArticlesFromHtml(
+    const articles = getNewsSourceHandler("rthk").parseLatestArticles(
       `
         <div class="ns2-inner">
           <a href="/rthk/ch/component/k2/1863167-20260722.htm"> 第一則 RTHK 新聞 </a>
@@ -67,7 +59,6 @@ suite("Extension Test Suite", () => {
         </div>
         <a href="/rthk/ch/latest-news.htm"> 非文章連結 </a>
       `,
-      "rthk",
     );
 
     assert.deepStrictEqual(articles, [
@@ -81,7 +72,7 @@ suite("Extension Test Suite", () => {
   });
 
   test("parses validated Now News headlines and publication dates from its list API", () => {
-    const articles = parseNowNewsArticlesFromJson(
+    const articles = getNewsSourceHandler("now").parseLatestArticles(
       JSON.stringify([
         { newsId: "655631", title: " 第一則 Now 新聞 ", publishDate: 1_784_852_800_000 },
         { newsId: "not-a-number", title: "非文章連結", publishDate: 1_784_852_800_001 },
@@ -96,6 +87,28 @@ suite("Extension Test Suite", () => {
         publishedAt: 1_784_852_800_000,
       },
     ]);
+  });
+
+  test("parses embedded Now News text and image content from its list API", () => {
+    const contents = getNewsSourceHandler("now").parseLatestArticleContents(
+      JSON.stringify([
+        {
+          newsId: "655631",
+          newsContent: [
+            { newsType: "text", value: "第一行<br>第二行" },
+            { newsType: "image", imageUrl: "/images/news.jpg" },
+            { newsType: "image", imageUrl: "javascript:alert('unsafe')" },
+          ],
+        },
+      ]),
+    );
+
+    assert.deepStrictEqual(contents.get("https://news.now.com/home/local/player?newsId=655631"), {
+      blocks: [
+        { type: "text", text: "第一行\n第二行" },
+        { type: "image", url: "https://news.now.com/images/news.jpg", alt: "" },
+      ],
+    });
   });
 
   test("sorts merged sources by publication date before limiting the article list", () => {
@@ -175,7 +188,7 @@ suite("Extension Test Suite", () => {
 
   test("extracts safe text, image, and direct-video blocks from article HTML", () => {
     assert.deepStrictEqual(
-      extractArticleContentFromHtml(
+      getNewsSourceHandler("now").parseArticleContent(
         `
           <article>
             <p> 第一段\n 文字 </p>
@@ -187,7 +200,6 @@ suite("Extension Test Suite", () => {
             <iframe src="https://example.com/player"></iframe>
           </article>
         `,
-        "now",
         "https://news.now.com/home/local/player?newsId=655882",
       ),
       {
@@ -198,12 +210,18 @@ suite("Extension Test Suite", () => {
         ],
       },
     );
-    assert.deepStrictEqual(extractArticleContentFromHtml("<main></main>", "rthk"), { blocks: [] });
+    assert.deepStrictEqual(
+      getNewsSourceHandler("rthk").parseArticleContent(
+        "<main></main>",
+        "https://news.rthk.hk/rthk/ch/component/k2/1234567-20260731.htm",
+      ),
+      { blocks: [] },
+    );
   });
 
   test("excludes the related-news section from Now News article details", () => {
     assert.deepStrictEqual(
-      extractArticleContentFromHtml(
+      getNewsSourceHandler("now").parseArticleContent(
         `
           <main>
             <article>
@@ -219,7 +237,6 @@ suite("Extension Test Suite", () => {
             </div>
           </main>
         `,
-        "now",
         "https://news.now.com/home/local/player?newsId=655631",
       ),
       { blocks: [{ type: "text", text: "這是新聞正文。" }] },
@@ -228,19 +245,18 @@ suite("Extension Test Suite", () => {
 
   test("preserves <br> line breaks while collapsing other whitespace", () => {
     assert.deepStrictEqual(
-      extractArticleContentFromHtml(
+      getNewsSourceHandler("rthk").parseArticleContent(
         `
           <main>
             <p>這是第一段。<br>這是第二段。<br><br>這是第三段。</p>
           </main>
         `,
-        "rthk",
         "https://news.rthk.hk/rthk/ch/component/k2/1234567-20260731.htm",
       ),
       { blocks: [{ type: "text", text: "這是第一段。\n這是第二段。\n\n這是第三段。" }] },
     );
     assert.deepStrictEqual(
-      extractArticleContentFromHtml(
+      getNewsSourceHandler("rthk").parseArticleContent(
         `
           <div class="itemFullText">
             第一行文字<br/>
@@ -248,7 +264,6 @@ suite("Extension Test Suite", () => {
             第三行文字
           </div>
         `,
-        "rthk",
         "https://news.rthk.hk/rthk/ch/component/k2/1234567-20260731.htm",
       ),
       { blocks: [{ type: "text", text: "第一行文字\n第二行文字\n第三行文字" }] },

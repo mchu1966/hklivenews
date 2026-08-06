@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { NewsArticle } from "./extension";
+import type { NewsArticle } from "./models/news-models";
 import { formatPublishedAt, getSourceLabel, truncateText } from "./news-formatters";
 
 export const MAX_SCRAPED_NEWS_CONTEXT_LENGTH = 12_000;

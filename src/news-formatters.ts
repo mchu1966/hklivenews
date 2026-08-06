@@ -1,14 +1,11 @@
+import { getNewsSourceDefinition } from "./handlers/news-source-handler";
+
 const HONG_KONG_UTC_OFFSET_MS = 8 * 60 * 60 * 1_000;
 
 export type NewsSource = "rthk" | "now";
 
-const SOURCE_LABELS: Readonly<Record<NewsSource, string>> = {
-  rthk: "RTHK",
-  now: "Now News",
-};
-
 export function getSourceLabel(source: string): string {
-  return SOURCE_LABELS[source as NewsSource] ?? source;
+  return source === "rthk" || source === "now" ? getNewsSourceDefinition(source).label : source;
 }
 
 export function truncateText(value: string, maxLength: number): string {
