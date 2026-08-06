@@ -35,11 +35,11 @@ function createTextArticleContent(text: string): NewsArticleContent {
   return { blocks: [{ type: "text", text }] };
 }
 
-function getArticleContentSummary(content: NewsArticleContent): string {
+export function getArticleContentSummary(content: NewsArticleContent): string {
   return content.blocks
     .filter((block): block is TextArticleBlock => block.type === "text")
     .map((block) => block.text)
-    .join(" ");
+    .join("\n\n");
 }
 
 async function fetchHtml(url: string): Promise<string> {

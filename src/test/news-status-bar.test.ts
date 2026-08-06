@@ -1,6 +1,20 @@
-import { NewsStatusBar } from "../news-status-bar";
+import * as assert from "assert";
+import { createArticleTooltip, NewsStatusBar } from "../news-status-bar";
 
 suite("News status bar", () => {
+  test("preserves line breaks in article details", () => {
+    const tooltip = createArticleTooltip(
+      {
+        title: "Now headline",
+        source: "now",
+        publishedAt: Date.parse("2026-07-22T12:34:00+08:00"),
+      },
+      "第一行\n第二行",
+    );
+
+    assert.ok(tooltip.value.includes("第一行  \n第二行"));
+  });
+
   test("supports each public display state", () => {
     const statusBar = new NewsStatusBar();
 

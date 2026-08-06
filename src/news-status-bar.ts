@@ -9,6 +9,31 @@ export interface NewsStatusArticle {
   readonly publishedAt: number;
 }
 
+export function createArticleTooltip(article: NewsStatusArticle, detail: string): vscode.MarkdownString {
+  const tooltip = new vscode.MarkdownString();
+  const detailLines = detail.split("\n");
+
+  tooltip.appendText(article.title);
+  tooltip.appendMarkdown("\n\n");
+
+  for (const [index, line] of detailLines.entries()) {
+    tooltip.appendText(line);
+
+    if (index < detailLines.length - 1) {
+      tooltip.appendMarkdown("  \n");
+    }
+  }
+
+  tooltip.appendMarkdown("\n\n");
+  tooltip.appendText(`Published: ${formatPublishedAt(article.publishedAt)}`);
+  tooltip.appendMarkdown("  \n");
+  tooltip.appendText(`Source: ${getSourceLabel(article.source)}`);
+  tooltip.appendMarkdown("  \n");
+  tooltip.appendText("Click to open the article.");
+
+  return tooltip;
+}
+
 export class NewsStatusBar implements vscode.Disposable {
   private readonly headlineItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 96);
   private readonly previousItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -40,7 +65,7 @@ export class NewsStatusBar implements vscode.Disposable {
     totalArticles: number,
   ): void {
     this.headlineItem.text = `$(newspaper) ${formatHeadline(article.title, STATUS_BAR_HEADLINE_LENGTH)}`;
-    this.headlineItem.tooltip = `${article.title}\n\n${detail}\n\nPublished: ${formatPublishedAt(article.publishedAt)}\nSource: ${getSourceLabel(article.source)}\nClick to open the article.`;
+    this.headlineItem.tooltip = createArticleTooltip(article, detail);
     this.positionItem.text = formatNewsPosition(currentIndex, totalArticles);
     this.showNavigationItems();
   }

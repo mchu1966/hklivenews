@@ -1,6 +1,6 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
-import { getNewsSourcesConfigurationTarget } from "../extension";
+import { getArticleContentSummary, getNewsSourcesConfigurationTarget } from "../extension";
 import { getNewsSourceHandler, toNowArticleUrl, toRthkArticleUrl } from "../handlers/news-source-handler";
 import {
   applyCachedArticleContent,
@@ -109,6 +109,19 @@ suite("Extension Test Suite", () => {
         { type: "image", url: "https://news.now.com/images/news.jpg", alt: "" },
       ],
     });
+  });
+
+  test("preserves paragraph breaks when summarizing Now News text blocks", () => {
+    assert.strictEqual(
+      getArticleContentSummary({
+        blocks: [
+          { type: "text", text: "第一段" },
+          { type: "image", url: "https://news.now.com/images/news.jpg", alt: "" },
+          { type: "text", text: "第二段" },
+        ],
+      }),
+      "第一段\n\n第二段",
+    );
   });
 
   test("sorts merged sources by publication date before limiting the article list", () => {
