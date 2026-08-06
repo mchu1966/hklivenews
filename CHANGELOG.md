@@ -4,6 +4,14 @@ All notable changes to the "hklivenews" extension will be documented in this fil
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.0.6]
+
+- Refactored news-source integration behind source handlers and a handler factory, separating RTHK and Now News parsing from extension lifecycle code.
+  - Moved the concrete RTHK and Now News handlers into dedicated modules while keeping the source-handler factory as the shared integration point.
+  - Split shared article HTML extraction and webview rendering into dedicated parser and renderer modules.
+  - Consolidated article models, helpers, source selection, and article collection operations into focused modules and removed obsolete compatibility adapters.
+  - Added focused tests for article HTML parsing and webview rendering behavior.
+
 ## [1.0.5]
 
 - Fixed RTHK article webviews rendering as a single block of text by preserving `<br>` line breaks during HTML extraction.
