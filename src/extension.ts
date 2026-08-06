@@ -2,16 +2,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import { load } from "cheerio";
 import * as vscode from "vscode";
-import {
-  formatHeadline,
-  formatNewsPosition,
-  formatPublishedAt,
-  getNextNewsIndex,
-  getSourceLabel,
-  truncateHeadline,
-  truncateText,
-  type NewsSource,
-} from "./news-formatters";
+import { formatPublishedAt, getNextNewsIndex, type NewsSource } from "./news-formatters";
 import { createNewsReporter } from "./news-reporter";
 import { NewsStatusBar } from "./news-status-bar";
 import { NewsTreeProvider } from "./news-view";
@@ -190,7 +181,12 @@ function cleanText(value: string): string {
 function extractTextPreservingLineBreaks(html: string): string {
   return html
     .split(/<br\s*\/?>/gi)
-    .map((part) => part.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    .map((part) =>
+      part
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
     .join("\n")
     .replace(/ *\n */g, "\n")
     .replace(/\n{2,}/g, "\n\n")
@@ -293,6 +289,64 @@ export function parseNowNewsArticlesFromJson(json: string): readonly NewsArticle
   });
 
   return toNewsArticles(links, "now", toNowArticleUrl);
+}
+
+function parseNowNewsBlockContent(item: Readonly<Record<string, unknown>>): NewsArticleBlock | undefined {
+  if (item.newsType === "text" && typeof item.value === "string") {
+    const text = extractTextPreservingLineBreaks(item.value).slice(0, MAX_ARTICLE_CONTENT_LENGTH);
+
+    return text ? { type: "text", text } : undefined;
+  }
+
+  if (item.newsType === "image" && typeof item.imageUrl === "string") {
+    const imageUrl = toSafeMediaUrl(item.imageUrl, "https://news.now.com/");
+
+    return imageUrl ? { type: "image", url: imageUrl, alt: "" } : undefined;
+  }
+
+  return undefined;
+}
+
+export function parseNowNewsArticleContentsFromJson(json: string): ReadonlyMap<string, NewsArticleContent> {
+  let data: unknown;
+
+  try {
+    data = JSON.parse(json);
+  } catch {
+    return new Map();
+  }
+
+  const items = getNowNewsItems(data);
+  const contents = new Map<string, NewsArticleContent>();
+
+  for (const item of items) {
+    if (!isRecord(item)) {
+      continue;
+    }
+
+    const { newsId, newsContent } = item;
+
+    if (typeof newsId !== "string" || !Array.isArray(newsContent)) {
+      continue;
+    }
+
+    const url = toNowArticleUrl(`/home/local/player?newsId=${newsId}`);
+
+    if (!url) {
+      continue;
+    }
+
+    const blocks = newsContent
+      .filter(isRecord)
+      .map((block) => parseNowNewsBlockContent(block))
+      .filter((block): block is NewsArticleBlock => block !== undefined);
+
+    if (blocks.length > 0) {
+      contents.set(url, { blocks });
+    }
+  }
+
+  return contents;
 }
 
 export function sortNewsArticlesByPublicationDate(articles: readonly NewsArticle[]): readonly NewsArticle[] {
@@ -523,12 +577,42 @@ class NewsScraper {
   }
 }
 
+interface FetchLatestResult {
+  readonly articles: readonly NewsArticle[];
+  readonly nowArticleContents: ReadonlyMap<string, NewsArticleContent>;
+}
+
 class MultiSourceNewsScraper {
-  public async fetchLatestArticles(sources: readonly NewsSource[]): Promise<readonly NewsArticle[]> {
+  public async fetchLatestArticles(sources: readonly NewsSource[]): Promise<FetchLatestResult> {
     const results = await Promise.allSettled(
-      sources.map((source) => new NewsScraper(source, NEWS_SOURCE_DEFINITIONS[source]).fetchLatestArticles()),
+      sources.map(async (source) => {
+        if (source === "now") {
+          const json = await fetchHtml(NEWS_SOURCE_DEFINITIONS.now.latestNewsUrl);
+
+          return {
+            articles: parseNowNewsArticlesFromJson(json),
+            contents: parseNowNewsArticleContentsFromJson(json),
+          };
+        }
+
+        const articles = await new NewsScraper(source, NEWS_SOURCE_DEFINITIONS[source]).fetchLatestArticles();
+
+        return { articles, contents: new Map<string, NewsArticleContent>() };
+      }),
     );
-    const articles = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+
+    const articles = results.flatMap((result) =>
+      result.status === "fulfilled" ? result.value.articles : [],
+    );
+    const nowArticleContents = new Map<string, NewsArticleContent>();
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        for (const [url, content] of result.value.contents) {
+          nowArticleContents.set(url, content);
+        }
+      }
+    }
 
     if (articles.length === 0) {
       const failure = results.find((result) => result.status === "rejected");
@@ -537,10 +621,23 @@ class MultiSourceNewsScraper {
       );
     }
 
-    return sortNewsArticlesByPublicationDate(articles);
+    return { articles: sortNewsArticlesByPublicationDate(articles), nowArticleContents };
   }
 
   public async fetchArticleContent(article: NewsArticle): Promise<NewsArticleContent> {
+    if (article.source === "now") {
+      try {
+        return await new NewsScraper(
+          article.source,
+          NEWS_SOURCE_DEFINITIONS[article.source],
+        ).fetchArticleContent(article.url);
+      } catch {
+        return createTextArticleContent(
+          "Article content is only available from the Now News website. Open the original article to read more.",
+        );
+      }
+    }
+
     return new NewsScraper(article.source, NEWS_SOURCE_DEFINITIONS[article.source]).fetchArticleContent(
       article.url,
     );
@@ -608,10 +705,17 @@ class HkLiveNewsController implements vscode.Disposable {
       const sources = getSelectedNewsSources(
         vscode.workspace.getConfiguration("hklivenews").get<unknown>("sources"),
       );
-      const fetchedSourceArticles = await this.scraper.fetchLatestArticles(sources);
+      const { articles: fetchedSourceArticles, nowArticleContents } =
+        await this.scraper.fetchLatestArticles(sources);
 
       if (this.isStopped) {
         return;
+      }
+
+      for (const [url, content] of nowArticleContents) {
+        if (!this.articleContentsByUrl.has(url)) {
+          this.cacheArticleContent({ url, source: "now", title: "", publishedAt: 0, content });
+        }
       }
 
       if (fetchedSourceArticles.length === 0) {
