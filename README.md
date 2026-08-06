@@ -15,6 +15,7 @@ HK Live News brings the latest Chinese-language Hong Kong headlines into the VS 
 - Shows the active headline, its position, and previous/next controls in the status bar.
 - Uses a fixed-width headline area, truncating long titles with `...`; hover over a headline to read its full title and an article-text excerpt.
 - Opens the selected article in an internal VS Code webview, with a link to the original article.
+- Optional: Notify you when a new headline is fetched; choose **Show Detail** to open its webview or **Snooze Today** to pause alerts until tomorrow; command to reset snooze.
 
 ### Preview
 
@@ -29,6 +30,9 @@ HK Live News brings the latest Chinese-language Hong Kong headlines into the VS 
 
 ![Chat reporter](resources/news-chat.png)
 *Chat reporter.* extension.
+
+![Headline notification](resources/headline-notification.png)
+*Headline notification.*
 
 ## Usage
 
@@ -59,6 +63,14 @@ Use `hklivenews.sources` to choose one or more sources. The default is `rthk`.
 
 Available values are `rthk` (RTHK Chinese latest news) and `now` (Now News local news). When multiple sources are selected, their headlines are combined and sorted by publication time in the status bar. The source name appears in each article tooltip.
 
+Set `hklivenews.latestHeadlineNotifications` to `true` to receive notifications for newly fetched latest headlines. It is disabled by default. **Snooze Today** suppresses these notifications until the next local calendar day.
+
+```json
+{
+ "hklivenews.latestHeadlineNotifications": true
+}
+```
+
 ## Commands
 
 | Command                                                   | Description                                             |
@@ -70,6 +82,8 @@ Available values are `rthk` (RTHK Chinese latest news) and `now` (Now News local
 | `HK Live News: Show Previous HK News Headline`            | Selects the previous headline.                          |
 | `HK Live News: Select HK News Headline`                   | Opens the headline picker.                              |
 | `HK Live News: Configure News Sources`                    | Opens a checkbox list to select the sources to combine. |
+| `HK Live News: Toggle Latest Headline Notifications`      | Turns latest-headline notifications on or off.          |
+| `HK Live News: Reset Latest Headline Notification Snooze` | Resumes notifications after snooze.                     |
 
 ## Keyboard Shortcuts
 

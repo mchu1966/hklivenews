@@ -3,7 +3,7 @@
   "displayName": "HK Live News",
   "description": "Read latest HK news from RTHK and other sources.",
   "publisher": "mchu1966",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "icon": "resources/hklivenews-icon.png",
   "license": "MIT",
   "repository": {
@@ -60,6 +60,14 @@
       {
         "command": "hklivenews.configureSources",
         "title": "HK Live News: Configure News Sources"
+      },
+      {
+        "command": "hklivenews.toggleLatestHeadlineNotifications",
+        "title": "HK Live News: Toggle Latest Headline Notifications"
+      },
+      {
+        "command": "hklivenews.resetLatestHeadlineNotificationSnooze",
+        "title": "HK Live News: Reset Latest Headline Notification Snooze"
       }
     ],
     "keybindings": [
@@ -94,6 +102,12 @@
               "Now News local news"
             ]
           }
+        },
+        "hklivenews.latestHeadlineNotifications": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "Show a notification when a new HK News headline is being fetched."
         }
       }
     },

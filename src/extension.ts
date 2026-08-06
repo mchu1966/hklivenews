@@ -3,6 +3,11 @@
 import * as vscode from "vscode";
 import { getNewsSourceHandler } from "./handlers/news-source-handler";
 import {
+  getLocalDayKey,
+  isSnoozedToday,
+  observeLatestHeadline,
+} from "./helpers/latest-headline-notifications";
+import {
   MAX_ARTICLES,
   applyCachedArticleContent,
   mergeNewsArticlesByPublicationDate,
@@ -24,6 +29,10 @@ import { renderArticleWebview } from "./renderers/article-webview-renderer";
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const AUTO_NEXT_INTERVAL_MS = 60 * 1000;
 const FETCH_TIMEOUT_MS = 30_000;
+const LATEST_HEADLINE_NOTIFICATIONS_SETTING = "latestHeadlineNotifications";
+const LATEST_HEADLINE_SNOOZED_DAY_KEY = "hklivenews.latestHeadlineNotifications.snoozedDay";
+const SHOW_DETAIL_ACTION = "Show Detail";
+const SNOOZE_TODAY_ACTION = "Snooze Today";
 
 export function getNewsSourcesConfigurationTarget(workspaceValue: unknown): vscode.ConfigurationTarget {
   return workspaceValue === undefined
@@ -55,6 +64,7 @@ async function fetchHtml(url: string): Promise<string> {
 interface FetchLatestResult {
   readonly articles: readonly NewsArticle[];
   readonly nowArticleContents: ReadonlyMap<string, NewsArticleContent>;
+  readonly hasFailedSources: boolean;
 }
 
 class MultiSourceNewsScraper {
@@ -91,7 +101,11 @@ class MultiSourceNewsScraper {
       );
     }
 
-    return { articles: sortNewsArticlesByPublicationDate(articles), nowArticleContents };
+    return {
+      articles: sortNewsArticlesByPublicationDate(articles),
+      nowArticleContents,
+      hasFailedSources: results.some((result) => result.status === "rejected"),
+    };
   }
 
   public async fetchArticleContent(article: NewsArticle): Promise<NewsArticleContent> {
@@ -127,9 +141,17 @@ class HkLiveNewsController implements vscode.Disposable {
   private isRefreshQueued = false;
   private isLoadingArticle = false;
   private isStopped = false;
+  private latestHeadlineUrl: string | undefined;
+  private snoozedDay: string | undefined;
+  private isLatestHeadlineNotificationVisible = false;
+  private pendingLatestHeadlineNotification: NewsArticle | undefined;
 
-  public constructor(treeDataProvider: NewsTreeProvider) {
+  public constructor(
+    treeDataProvider: NewsTreeProvider,
+    private readonly globalState: vscode.Memento,
+  ) {
     this.treeDataProvider = treeDataProvider;
+    this.snoozedDay = globalState.get<string>(LATEST_HEADLINE_SNOOZED_DAY_KEY);
   }
 
   public async start(showError = true): Promise<void> {
@@ -174,8 +196,11 @@ class HkLiveNewsController implements vscode.Disposable {
       const sources = getSelectedNewsSources(
         vscode.workspace.getConfiguration("hklivenews").get<unknown>("sources"),
       );
-      const { articles: fetchedSourceArticles, nowArticleContents } =
-        await this.scraper.fetchLatestArticles(sources);
+      const {
+        articles: fetchedSourceArticles,
+        nowArticleContents,
+        hasFailedSources,
+      } = await this.scraper.fetchLatestArticles(sources);
 
       if (this.isStopped) {
         return;
@@ -199,6 +224,7 @@ class HkLiveNewsController implements vscode.Disposable {
       this.sourceArticles = sourceArticles;
       this.currentIndex = matchingIndex >= 0 ? matchingIndex : 0;
       this.treeDataProvider.setArticles(sourceArticles, sources);
+      this.notifyAboutLatestHeadline(articles, !hasFailedSources);
       await this.showCurrentArticle();
     } catch (error: unknown) {
       const message = getErrorMessage(error);
@@ -268,6 +294,28 @@ class HkLiveNewsController implements vscode.Disposable {
       selectedItems.map((item) => item.source),
       getNewsSourcesConfigurationTarget(configuration.inspect("sources")?.workspaceValue),
     );
+  }
+
+  public async toggleLatestHeadlineNotifications(): Promise<void> {
+    const configuration = vscode.workspace.getConfiguration("hklivenews");
+    const isEnabled = configuration.get<boolean>(LATEST_HEADLINE_NOTIFICATIONS_SETTING, false);
+
+    await configuration.update(
+      LATEST_HEADLINE_NOTIFICATIONS_SETTING,
+      !isEnabled,
+      getNewsSourcesConfigurationTarget(
+        configuration.inspect(LATEST_HEADLINE_NOTIFICATIONS_SETTING)?.workspaceValue,
+      ),
+    );
+    void vscode.window.showInformationMessage(
+      `Latest headline notifications ${isEnabled ? "disabled" : "enabled"}.`,
+    );
+  }
+
+  public async resetLatestHeadlineNotificationSnooze(): Promise<void> {
+    this.snoozedDay = undefined;
+    await this.globalState.update(LATEST_HEADLINE_SNOOZED_DAY_KEY, undefined);
+    void vscode.window.showInformationMessage("Latest headline notification snooze has been reset.");
   }
 
   public async refreshForSourceChange(): Promise<void> {
@@ -435,6 +483,65 @@ class HkLiveNewsController implements vscode.Disposable {
     return this.getCurrentArticle()?.url === articleUrl;
   }
 
+  private notifyAboutLatestHeadline(articles: readonly NewsArticle[], shouldObserve: boolean): void {
+    const configuration = vscode.workspace.getConfiguration("hklivenews");
+    const notificationsEnabled = configuration.get<boolean>(LATEST_HEADLINE_NOTIFICATIONS_SETTING, false);
+    const isSnoozed = isSnoozedToday(this.snoozedDay, new Date());
+    const observation = observeLatestHeadline(
+      this.latestHeadlineUrl,
+      articles,
+      notificationsEnabled && !isSnoozed,
+      shouldObserve,
+    );
+    this.latestHeadlineUrl = observation.latestHeadlineUrl;
+
+    if (!observation.articleToNotify) {
+      return;
+    }
+
+    if (this.isLatestHeadlineNotificationVisible) {
+      this.pendingLatestHeadlineNotification = observation.articleToNotify;
+      return;
+    }
+
+    void this.showLatestHeadlineNotification(observation.articleToNotify);
+  }
+
+  private async showLatestHeadlineNotification(article: NewsArticle): Promise<void> {
+    this.isLatestHeadlineNotificationVisible = true;
+
+    try {
+      const action = await vscode.window.showInformationMessage(
+        `${article.source}: ${article.title}`,
+        SHOW_DETAIL_ACTION,
+        SNOOZE_TODAY_ACTION,
+      );
+
+      if (action === SHOW_DETAIL_ACTION) {
+        await this.showArticleInWebview(article.url);
+        return;
+      }
+
+      if (action === SNOOZE_TODAY_ACTION) {
+        this.snoozedDay = getLocalDayKey(new Date());
+        await this.globalState.update(LATEST_HEADLINE_SNOOZED_DAY_KEY, this.snoozedDay);
+        this.pendingLatestHeadlineNotification = undefined;
+      }
+    } finally {
+      this.isLatestHeadlineNotificationVisible = false;
+      this.showPendingLatestHeadlineNotification();
+    }
+  }
+
+  private showPendingLatestHeadlineNotification(): void {
+    const pendingArticle = this.pendingLatestHeadlineNotification;
+    this.pendingLatestHeadlineNotification = undefined;
+
+    if (pendingArticle && !isSnoozedToday(this.snoozedDay, new Date())) {
+      void this.showLatestHeadlineNotification(pendingArticle);
+    }
+  }
+
   private startRefreshTimer(): void {
     this.refreshTimer = setInterval(() => void this.refresh(false), REFRESH_INTERVAL_MS);
   }
@@ -448,7 +555,7 @@ let controller: HkLiveNewsController | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   const treeDataProvider = new NewsTreeProvider();
-  controller = new HkLiveNewsController(treeDataProvider);
+  controller = new HkLiveNewsController(treeDataProvider, context.globalState);
   const reporter = createNewsReporter(() => controller?.getArticles() ?? []);
 
   context.subscriptions.push(
@@ -463,6 +570,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("hklivenews.prev", () => controller?.previous()),
     vscode.commands.registerCommand("hklivenews.selectHeadline", () => controller?.selectHeadline()),
     vscode.commands.registerCommand("hklivenews.configureSources", () => controller?.configureSources()),
+    vscode.commands.registerCommand("hklivenews.toggleLatestHeadlineNotifications", () =>
+      controller?.toggleLatestHeadlineNotifications(),
+    ),
+    vscode.commands.registerCommand("hklivenews.resetLatestHeadlineNotificationSnooze", () =>
+      controller?.resetLatestHeadlineNotificationSnooze(),
+    ),
     vscode.commands.registerCommand("hklivenews.openCurrent", () => controller?.openCurrentArticle()),
     vscode.commands.registerCommand("hklivenews.openArticle", (articleUrl: string) =>
       controller?.showArticleInWebview(articleUrl),

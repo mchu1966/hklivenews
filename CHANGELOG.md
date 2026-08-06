@@ -4,6 +4,12 @@ All notable changes to the "hklivenews" extension will be documented in this fil
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.0.7]
+
+- Added opt-in notifications for newly fetched headlines, with **Show Detail** and **Snooze Today** actions.
+  - Added the `hklivenews.latestHeadlineNotifications` setting and **Toggle Latest Headline Notifications** command.
+  - Added the **Reset Latest Headline Notification Snooze** command to resume notifications after snooze.
+
 ## [1.0.6]
 
 - Refactored news-source integration behind source handlers and a handler factory, separating RTHK and Now News parsing from extension lifecycle code.
